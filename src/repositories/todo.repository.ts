@@ -45,6 +45,20 @@ export async function getTodoById(id: string): Promise<Todo | null> {
 export async function getOpenTodos(): Promise<Todo[]> {
     const database = await getDatabase();
 
+    const debugRows = await database.getAllAsync(
+        `
+        SELECT
+            id,
+            subject,
+            status,
+            recurrence_frequency,
+            recurrence_interval
+        FROM todos
+        `,
+    );
+
+    console.log('ALL TODOS:', debugRows);
+
     const rows = await database.getAllAsync<TodoRow>(
         `
         SELECT *
@@ -113,14 +127,14 @@ export async function createTodo(input: CreateTodoInput): Promise<Todo> {
         `,
         id,
         input.typeId,
-        input.categoryId,
+        input.categoryId ?? null,
         input.subject.trim(),
-        input.notes,
+        input.notes ?? null,
         priorityToDatabase(input.priority),
-        input.dueDate,
-        input.reminderAt,
-        input.recurrenceFrequency,
-        input.recurrenceInterval,
+        input.dueDate ?? null,
+        input.reminderAt ?? null,
+        input.recurrenceFrequency ?? null,
+        input.recurrenceInterval ?? null,
         now,
         now,
     );
@@ -157,14 +171,14 @@ export async function updateTodo(
         WHERE id = ?
         `,
         input.typeId,
-        input.categoryId,
+        input.categoryId ?? null,
         input.subject.trim(),
-        input.notes,
+        input.notes ?? null,
         priorityToDatabase(input.priority),
-        input.dueDate,
-        input.reminderAt,
-        input.recurrenceFrequency,
-        input.recurrenceInterval,
+        input.dueDate ?? null,
+        input.reminderAt ?? null,
+        input.recurrenceFrequency ?? null,
+        input.recurrenceInterval ?? null,
         new Date().toISOString(),
         id,
     );

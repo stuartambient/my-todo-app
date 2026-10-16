@@ -1,33 +1,54 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
     completeTodo,
     deleteTodo,
+    getCompletedTodos,
     getOpenTodos,
     reopenTodo,
 } from '@/repositories/todo.repository';
-import type { Todo } from '@/types/todo';
+import type { Todo, TodoStatus } from '@/types/todo';
 
-export function useTodos() {
+export function useTodos(status: TodoStatus = 'open') {
     const [todos, setTodos] = useState<Todo[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
 
+    const requestId = useRef(0);
+
     const refresh = useCallback(async () => {
+        const currentRequest = ++requestId.current;
+
         setLoading(true);
         setError(null);
 
         try {
-            const result = await getOpenTodos();
-            setTodos(result);
+            const result =
+                status === 'completed'
+                    ? await getCompletedTodos()
+                    : await getOpenTodos();
+
+            if (currentRequest === requestId.current) {
+                setTodos(result);
+            }
         } catch (err) {
-            setError(
-                err instanceof Error ? err : new Error('Failed to load todos.'),
-            );
+            console.error('Failed to load todos:', err);
+            if (err instanceof Error) {
+                console.error('Todo error stack:', err.stack);
+            }
+            if (currentRequest === requestId.current) {
+                setError(
+                    err instanceof Error
+                        ? err
+                        : new Error('Failed to load todos.'),
+                );
+            }
         } finally {
-            setLoading(false);
+            if (currentRequest === requestId.current) {
+                setLoading(false);
+            }
         }
-    }, []);
+    }, [status]);
 
     const complete = useCallback(
         async (id: string) => {
@@ -54,36 +75,47 @@ export function useTodos() {
     );
 
     useEffect(() => {
-        let cancelled = false;
+        const currentRequest = ++requestId.current;
 
-        getOpenTodos()
-            .then((result) => {
-                if (!cancelled) {
+        async function loadTodos() {
+            try {
+                const result =
+                    status === 'completed'
+                        ? await getCompletedTodos()
+                        : await getOpenTodos();
+
+                if (currentRequest === requestId.current) {
                     setTodos(result);
+                    setError(null);
                 }
-            })
-            .catch((err) => {
-                if (!cancelled) {
+            } catch (err) {
+                console.error('Failed to load todos:', err);
+                if (err instanceof Error) {
+                    console.error('Todo error stack:', err.stack);
+                }
+                if (currentRequest === requestId.current) {
                     setError(
                         err instanceof Error
                             ? err
                             : new Error('Failed to load todos.'),
                     );
                 }
-            })
-            .finally(() => {
-                if (!cancelled) {
+            } finally {
+                if (currentRequest === requestId.current) {
                     setLoading(false);
                 }
-            });
+            }
+        }
+
+        void loadTodos();
 
         return () => {
-            cancelled = true;
+            requestId.current += 1;
         };
-    }, []);
+    }, [status]);
 
     return {
-        todos,
+        todos: todos.filter((todo) => todo.status === status),
         loading,
         error,
         refresh,

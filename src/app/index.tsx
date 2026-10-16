@@ -1,7 +1,8 @@
 import { router, Stack, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     Pressable,
     StyleSheet,
@@ -11,13 +12,16 @@ import {
 
 import { useTodoTypes } from '@/hooks/useTodoTypes';
 import { useTodos } from '@/hooks/useTodos';
-import type { Todo } from '@/types/todo';
+import type { Todo, TodoStatus } from '@/types/todo';
 import { getDueTime } from '@/utils/dueTime';
 
 export default function HomeScreen() {
-    const { todos, loading, error, refresh, complete } = useTodos();
+    const [status, setStatus] = useState<TodoStatus>('open');
 
+    const { todos, loading, error, refresh, complete } = useTodos(status);
     const { todoTypes } = useTodoTypes();
+
+    const showingCompleted = status === 'completed';
 
     useFocusEffect(
         useCallback(() => {
@@ -31,28 +35,51 @@ export default function HomeScreen() {
         [todoTypes],
     );
 
+    async function handleComplete(id: string) {
+        try {
+            await complete(id);
+        } catch (err) {
+            Alert.alert(
+                'Unable to complete todo',
+                err instanceof Error ? err.message : 'Please try again.',
+            );
+        }
+    }
+
     function renderTodo({ item }: { item: Todo }) {
         const typeName = todoTypeNames.get(item.typeId) ?? 'Todo';
+        const isCompleted = item.status === 'completed';
 
-        const dueTime = getDueTime(item.dueDate);
+        const dueTime = isCompleted ? null : getDueTime(item.dueDate);
 
         return (
-            <Pressable
-                style={styles.todoRow}
-                onPress={() => router.push(`/todo/${item.id}`)}
-            >
-                <Pressable
-                    style={styles.completeButton}
-                    hitSlop={8}
-                    onPress={(event) => {
-                        event.stopPropagation();
-                        void complete(item.id);
-                    }}
-                >
-                    <View style={styles.checkbox} />
-                </Pressable>
+            <View style={styles.todoRow}>
+                {isCompleted ? (
+                    <View style={styles.completeButton}>
+                        <View
+                            style={[styles.checkbox, styles.completedCheckbox]}
+                        >
+                            <Text style={styles.checkmark}>✓</Text>
+                        </View>
+                    </View>
+                ) : (
+                    <Pressable
+                        style={styles.completeButton}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Mark ${item.subject} complete`}
+                        onPress={() => {
+                            void handleComplete(item.id);
+                        }}
+                    >
+                        <View style={styles.checkbox} />
+                    </Pressable>
+                )}
 
-                <View style={styles.todoContent}>
+                <Pressable
+                    style={styles.todoContent}
+                    onPress={() => router.push(`/todo/${item.id}`)}
+                >
                     <View style={styles.subjectRow}>
                         <Text style={styles.subject} numberOfLines={1}>
                             {item.subject}
@@ -65,9 +92,15 @@ export default function HomeScreen() {
 
                     <Text style={styles.metadata}>
                         {typeName}
-
                         {item.dueDate ? ` · ${item.dueDate}` : ''}
                     </Text>
+
+                    {isCompleted && item.completedAt && (
+                        <Text style={styles.completedText}>
+                            Completed{' '}
+                            {new Date(item.completedAt).toLocaleDateString()}
+                        </Text>
+                    )}
 
                     {dueTime && (
                         <Text
@@ -81,8 +114,8 @@ export default function HomeScreen() {
                             {dueTime.label}
                         </Text>
                     )}
-                </View>
-            </Pressable>
+                </Pressable>
+            </View>
         );
     }
 
@@ -93,6 +126,54 @@ export default function HomeScreen() {
                     title: 'Todos',
                 }}
             />
+
+            <View style={styles.filterContainer}>
+                <View style={styles.filterBar}>
+                    <Pressable
+                        style={[
+                            styles.filterButton,
+                            !showingCompleted && styles.filterButtonActive,
+                        ]}
+                        accessibilityRole="tab"
+                        accessibilityState={{
+                            selected: !showingCompleted,
+                        }}
+                        onPress={() => setStatus('open')}
+                    >
+                        <Text
+                            style={[
+                                styles.filterButtonText,
+                                !showingCompleted &&
+                                    styles.filterButtonTextActive,
+                            ]}
+                        >
+                            Open
+                        </Text>
+                    </Pressable>
+
+                    <Pressable
+                        style={[
+                            styles.filterButton,
+                            showingCompleted && styles.filterButtonActive,
+                        ]}
+                        accessibilityRole="tab"
+                        accessibilityState={{
+                            selected: showingCompleted,
+                        }}
+                        onPress={() => setStatus('completed')}
+                    >
+                        <Text
+                            style={[
+                                styles.filterButtonText,
+                                showingCompleted &&
+                                    styles.filterButtonTextActive,
+                            ]}
+                        >
+                            Completed
+                        </Text>
+                    </Pressable>
+                </View>
+            </View>
 
             {loading && todos.length === 0 ? (
                 <View style={styles.centered}>
@@ -119,10 +200,16 @@ export default function HomeScreen() {
                     }
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
-                            <Text style={styles.emptyTitle}>No open todos</Text>
+                            <Text style={styles.emptyTitle}>
+                                {showingCompleted
+                                    ? 'No completed todos'
+                                    : 'No open todos'}
+                            </Text>
 
                             <Text style={styles.emptyText}>
-                                Create your first todo to get started.
+                                {showingCompleted
+                                    ? 'Todos you complete will appear here.'
+                                    : 'Tap + to create a todo.'}
                             </Text>
                         </View>
                     }
@@ -131,6 +218,8 @@ export default function HomeScreen() {
 
             <Pressable
                 style={styles.addButton}
+                accessibilityRole="button"
+                accessibilityLabel="Create todo"
                 onPress={() => router.push('/todo/new')}
             >
                 <Text style={styles.addButtonText}>+</Text>
@@ -143,6 +232,40 @@ const styles = StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: '#ffffff',
+    },
+
+    filterContainer: {
+        paddingHorizontal: 16,
+        paddingTop: 16,
+        paddingBottom: 4,
+    },
+
+    filterBar: {
+        flexDirection: 'row',
+        padding: 4,
+        borderRadius: 10,
+        backgroundColor: '#eeeeee',
+    },
+
+    filterButton: {
+        flex: 1,
+        alignItems: 'center',
+        paddingVertical: 10,
+        borderRadius: 7,
+    },
+
+    filterButtonActive: {
+        backgroundColor: '#222222',
+    },
+
+    filterButtonText: {
+        color: '#555555',
+        fontSize: 15,
+        fontWeight: '600',
+    },
+
+    filterButtonTextActive: {
+        color: '#ffffff',
     },
 
     list: {
@@ -167,9 +290,22 @@ const styles = StyleSheet.create({
     checkbox: {
         width: 24,
         height: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
         borderWidth: 2,
         borderColor: '#555555',
         borderRadius: 12,
+    },
+
+    completedCheckbox: {
+        borderColor: '#555555',
+        backgroundColor: '#555555',
+    },
+
+    checkmark: {
+        color: '#ffffff',
+        fontSize: 15,
+        fontWeight: '700',
     },
 
     todoContent: {
@@ -196,6 +332,12 @@ const styles = StyleSheet.create({
 
     metadata: {
         marginTop: 5,
+        color: '#666666',
+        fontSize: 13,
+    },
+
+    completedText: {
+        marginTop: 3,
         color: '#666666',
         fontSize: 13,
     },

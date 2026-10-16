@@ -1,31 +1,33 @@
 import * as SQLite from 'expo-sqlite';
 
 import { INITIAL_SCHEMA } from './migrations';
-
 import { seedDatabase } from './seed';
 
 const DATABASE_NAME = 'todo.db';
 
-let database: SQLite.SQLiteDatabase | null = null;
+let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
-export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
-    if (database) {
-        return database;
-    }
-
-    database = await SQLite.openDatabaseAsync(DATABASE_NAME);
+async function openAndInitializeDatabase(): Promise<SQLite.SQLiteDatabase> {
+    const database = await SQLite.openDatabaseAsync(DATABASE_NAME);
 
     await database.execAsync(INITIAL_SCHEMA);
-
     await seedDatabase(database);
 
-    /*     const types = await database.getAllAsync(
-        'SELECT * FROM todo_types ORDER BY sort_order',
-    );
-
-    console.log('TODO TYPES:', types); */
-
     return database;
+}
+
+export function getDatabase(): Promise<SQLite.SQLiteDatabase> {
+    if (!databasePromise) {
+        databasePromise = openAndInitializeDatabase().catch((error) => {
+            // Allow a later call to retry if initialization fails.
+            databasePromise = null;
+
+            console.error('Database initialization failed:', error);
+            throw error;
+        });
+    }
+
+    return databasePromise;
 }
 
 export async function initializeDatabase(): Promise<void> {
