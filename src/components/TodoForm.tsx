@@ -58,6 +58,8 @@ export function TodoForm({
     const {
         control,
         handleSubmit,
+        getValues,
+        setValue,
         formState: { errors, isSubmitting },
     } = useForm<TodoFormValues>({
         resolver: zodResolver(todoSchema),
@@ -392,7 +394,22 @@ export function TodoForm({
                                             selected &&
                                                 styles.optionButtonSelected,
                                         ]}
-                                        onPress={() => onChange(frequency)}
+                                        onPress={() => {
+                                            onChange(frequency);
+
+                                            setValue(
+                                                'recurrenceInterval',
+                                                frequency === null
+                                                    ? null
+                                                    : (getValues(
+                                                          'recurrenceInterval',
+                                                      ) ?? 1),
+                                                {
+                                                    shouldDirty: true,
+                                                    shouldValidate: true,
+                                                },
+                                            );
+                                        }}
                                     >
                                         <Text
                                             style={[
@@ -438,7 +455,7 @@ export function TodoForm({
                                 onChange(Number.isNaN(number) ? null : number);
                             }}
                             onBlur={onBlur}
-                            placeholder="1"
+                            placeholder="Not repeating"
                             keyboardType="number-pad"
                         />
                     )}

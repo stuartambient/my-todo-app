@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    FlatList,
+    SectionList,
     Pressable,
     StyleSheet,
     Text,
@@ -15,6 +15,38 @@ import { useTodos } from '@/hooks/useTodos';
 import type { Todo, TodoStatus } from '@/types/todo';
 import { getDueTime } from '@/utils/dueTime';
 
+type TodoSection = {
+    key: string;
+    title: string | null;
+    data: Todo[];
+};
+
+function getDateKey(value: string): string {
+    // Keep date-only values as local calendar dates.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return value;
+    }
+
+    // For timestamps, group by the date on the user's device.
+    const date = new Date(value);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+}
+
+function formatDateHeading(dateKey: string): string {
+    const [year, month, day] = dateKey.split('-').map(Number);
+
+    return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+    });
+}
+
 export default function HomeScreen() {
     const [status, setStatus] = useState<TodoStatus>('open');
 
@@ -22,6 +54,52 @@ export default function HomeScreen() {
     const { todoTypes } = useTodoTypes();
 
     const showingCompleted = status === 'completed';
+
+    const sections = useMemo<TodoSection[]>(() => {
+        // Preserve the existing completed-list order without headings.
+        if (showingCompleted) {
+            return todos.length > 0
+                ? [{ key: 'completed', title: null, data: todos }]
+                : [];
+        }
+
+        const datedGroups = new Map<string, Todo[]>();
+        const undatedTodos: Todo[] = [];
+
+        for (const todo of todos) {
+            if (!todo.dueDate) {
+                undatedTodos.push(todo);
+                continue;
+            }
+
+            const dateKey = getDateKey(todo.dueDate);
+            const group = datedGroups.get(dateKey);
+
+            if (group) {
+                group.push(todo);
+            } else {
+                datedGroups.set(dateKey, [todo]);
+            }
+        }
+
+        const result: TodoSection[] = [...datedGroups.entries()]
+            .sort(([first], [second]) => first.localeCompare(second))
+            .map(([dateKey, data]) => ({
+                key: dateKey,
+                title: formatDateHeading(dateKey),
+                data,
+            }));
+
+        if (undatedTodos.length > 0) {
+            result.push({
+                key: 'undated',
+                title: 'No due date',
+                data: undatedTodos,
+            });
+        }
+
+        return result;
+    }, [todos, showingCompleted]);
 
     useFocusEffect(
         useCallback(() => {
@@ -191,10 +269,21 @@ export default function HomeScreen() {
                     </Pressable>
                 </View>
             ) : (
-                <FlatList
-                    data={todos}
+                <SectionList<Todo, TodoSection>
+                    sections={sections}
                     keyExtractor={(item) => item.id}
                     renderItem={renderTodo}
+                    renderSectionHeader={({ section }) =>
+                        section.title ? (
+                            <Text
+                                style={styles.dateHeading}
+                                accessibilityRole="header"
+                            >
+                                {section.title}
+                            </Text>
+                        ) : null
+                    }
+                    stickySectionHeadersEnabled={false}
                     contentContainerStyle={
                         todos.length === 0 ? styles.emptyList : styles.list
                     }
@@ -305,6 +394,16 @@ const styles = StyleSheet.create({
     checkmark: {
         color: '#ffffff',
         fontSize: 15,
+        fontWeight: '700',
+    },
+
+    dateHeading: {
+        marginTop: 20,
+        paddingBottom: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: '#999999',
+        color: '#222222',
+        fontSize: 18,
         fontWeight: '700',
     },
 
