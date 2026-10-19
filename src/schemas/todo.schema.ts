@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { isCalendarDate } from '@/utils/recurrence';
+
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 const nullableText = z
@@ -19,8 +21,10 @@ const nullableDate = z
     .string()
     .nullable()
     .refine(
-        (value) => value === null || datePattern.test(value),
-        'Date must use YYYY-MM-DD format.',
+        (value) =>
+            value === null ||
+            (datePattern.test(value) && isCalendarDate(value)),
+        'Choose a valid date in YYYY-MM-DD format.',
     );
 
 const nullableDateTime = z
@@ -56,6 +60,8 @@ export const todoSchema = z
             .nullable(),
 
         recurrenceInterval: z.number().int().positive().nullable(),
+
+        recurrenceBasis: z.enum(['due_date', 'completion_date']).nullable(),
     })
     .superRefine((todo, context) => {
         if (
@@ -79,6 +85,31 @@ export const todoSchema = z
                 message: 'A recurrence frequency is required.',
             });
         }
-    });
+        if (todo.recurrenceFrequency !== null && todo.dueDate === null) {
+            context.addIssue({
+                code: 'custom',
+                path: ['dueDate'],
+                message: 'Choose an initial due date for a repeating todo.',
+            });
+        }
+
+        if (
+            todo.recurrenceFrequency !== null &&
+            todo.recurrenceBasis === null
+        ) {
+            context.addIssue({
+                code: 'custom',
+                path: ['recurrenceBasis'],
+                message: 'Choose what the repeat is based on.',
+            });
+        }
+    })
+    .transform((todo) => ({
+        ...todo,
+        recurrenceInterval: todo.recurrenceFrequency
+            ? todo.recurrenceInterval
+            : null,
+        recurrenceBasis: todo.recurrenceFrequency ? todo.recurrenceBasis : null,
+    }));
 
 export type TodoFormValues = z.infer<typeof todoSchema>;

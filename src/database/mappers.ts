@@ -1,5 +1,10 @@
 import type { Category } from '@/types/category';
-import type { RecurrenceFrequency, Todo, TodoStatus } from '@/types/todo';
+import type {
+    RecurrenceBasis,
+    RecurrenceFrequency,
+    Todo,
+    TodoStatus,
+} from '@/types/todo';
 import type { TodoType } from '@/types/todoType';
 
 export type TodoTypeRow = {
@@ -34,6 +39,9 @@ export type TodoRow = {
     reminder_at: string | null;
     recurrence_frequency: string | null;
     recurrence_interval: number | null;
+    recurrence_basis: string | null;
+    recurrence_anchor_date: string | null;
+    recurrence_source_id: string | null;
     created_at: string;
     updated_at: string;
     completed_at: string | null;
@@ -77,6 +85,7 @@ export function mapTodoRow(row: TodoRow): Todo {
         recurrenceFrequency:
             row.recurrence_frequency as RecurrenceFrequency | null,
         recurrenceInterval: row.recurrence_interval,
+        recurrenceBasis: row.recurrence_basis as RecurrenceBasis | null,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         completedAt: row.completed_at,

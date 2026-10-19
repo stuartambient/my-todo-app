@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
-import { INITIAL_SCHEMA } from './migrations';
+import { INITIAL_SCHEMA, migrateDatabase } from './migrations';
 import { seedDatabase } from './seed';
 
 const DATABASE_NAME = 'todo.db';
@@ -11,6 +11,7 @@ async function openAndInitializeDatabase(): Promise<SQLite.SQLiteDatabase> {
     const database = await SQLite.openDatabaseAsync(DATABASE_NAME);
 
     await database.execAsync(INITIAL_SCHEMA);
+    await migrateDatabase(database);
     await seedDatabase(database);
 
     return database;

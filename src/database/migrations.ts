@@ -1,3 +1,5 @@
+import type { SQLiteDatabase } from 'expo-sqlite';
+
 export const INITIAL_SCHEMA = `
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
@@ -79,3 +81,48 @@ CREATE INDEX IF NOT EXISTS idx_todos_type_id
 CREATE INDEX IF NOT EXISTS idx_todos_category_id
     ON todos(category_id);
 `;
+
+/**
+ * Upgrade existing installations in place. CREATE TABLE IF NOT EXISTS alone
+ * cannot add columns to a database that already exists.
+ */
+export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
+    await database.withExclusiveTransactionAsync(async (transaction) => {
+        const columns = await transaction.getAllAsync<{ name: string }>(
+            'PRAGMA table_info(todos)',
+        );
+        const existing = new Set(columns.map((column) => column.name));
+        const additions = [
+            [
+                'recurrence_basis',
+                "TEXT CHECK (recurrence_basis IS NULL OR recurrence_basis IN ('due_date', 'completion_date'))",
+            ],
+            ['recurrence_anchor_date', 'TEXT'],
+            ['recurrence_source_id', 'TEXT'],
+        ] as const;
+
+        for (const [name, definition] of additions) {
+            if (!existing.has(name)) {
+                // Both values are fixed constants above, never user input.
+                await transaction.execAsync(
+                    `ALTER TABLE todos ADD COLUMN ${name} ${definition};`,
+                );
+            }
+        }
+
+        await transaction.execAsync(`
+            UPDATE todos
+            SET recurrence_basis = 'due_date'
+            WHERE recurrence_frequency IS NOT NULL AND recurrence_basis IS NULL;
+
+            UPDATE todos
+            SET recurrence_anchor_date = due_date
+            WHERE recurrence_frequency IS NOT NULL
+                AND recurrence_anchor_date IS NULL;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_todos_recurrence_source
+                ON todos(recurrence_source_id)
+                WHERE recurrence_source_id IS NOT NULL;
+        `);
+    });
+}

@@ -4,6 +4,8 @@ export type TodoPriority = 'normal' | 'high';
 
 export type RecurrenceFrequency = 'day' | 'week' | 'month' | 'year';
 
+export type RecurrenceBasis = 'due_date' | 'completion_date';
+
 export type Todo = {
     id: string;
 
@@ -22,6 +24,7 @@ export type Todo = {
 
     recurrenceFrequency: RecurrenceFrequency | null;
     recurrenceInterval: number | null;
+    recurrenceBasis: RecurrenceBasis | null;
 
     createdAt: string;
     updatedAt: string;

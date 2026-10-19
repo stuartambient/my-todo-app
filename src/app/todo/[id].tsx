@@ -116,7 +116,9 @@ export default function EditTodoScreen() {
 
             Alert.alert(
                 'Unable to update todo',
-                'An error occurred while changing the todo status.',
+                err instanceof Error
+                    ? err.message
+                    : 'An error occurred while changing the todo status.',
             );
         }
     }
@@ -184,6 +186,9 @@ export default function EditTodoScreen() {
         reminderAt: todo.reminderAt,
         recurrenceFrequency: todo.recurrenceFrequency,
         recurrenceInterval: todo.recurrenceInterval,
+        recurrenceBasis: todo.recurrenceFrequency
+            ? (todo.recurrenceBasis ?? 'due_date')
+            : null,
     };
 
     return (

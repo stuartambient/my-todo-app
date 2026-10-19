@@ -1,7 +1,7 @@
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { format } from 'date-fns';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import {
     Pressable,
     ScrollView,
@@ -40,6 +40,7 @@ const DEFAULT_VALUES: TodoFormValues = {
 
     recurrenceFrequency: null,
     recurrenceInterval: null,
+    recurrenceBasis: null,
 };
 
 function parseStoredDate(value: string): Date {
@@ -64,6 +65,15 @@ export function TodoForm({
     } = useForm<TodoFormValues>({
         resolver: zodResolver(todoSchema),
         defaultValues: initialValues ?? DEFAULT_VALUES,
+    });
+
+    const recurrenceFrequency = useWatch({
+        control,
+        name: 'recurrenceFrequency',
+    });
+    const recurrenceBasis = useWatch({
+        control,
+        name: 'recurrenceBasis',
     });
 
     const submitDisabled = disabled || isSubmitting;
@@ -398,6 +408,19 @@ export function TodoForm({
                                             onChange(frequency);
 
                                             setValue(
+                                                'recurrenceBasis',
+                                                frequency === null
+                                                    ? null
+                                                    : (getValues(
+                                                          'recurrenceBasis',
+                                                      ) ?? 'due_date'),
+                                                {
+                                                    shouldDirty: true,
+                                                    shouldValidate: true,
+                                                },
+                                            );
+
+                                            setValue(
                                                 'recurrenceInterval',
                                                 frequency === null
                                                     ? null
@@ -455,7 +478,14 @@ export function TodoForm({
                                 onChange(Number.isNaN(number) ? null : number);
                             }}
                             onBlur={onBlur}
-                            placeholder="Not repeating"
+                            editable={
+                                recurrenceFrequency !== null && !submitDisabled
+                            }
+                            placeholder={
+                                recurrenceFrequency
+                                    ? 'Enter interval'
+                                    : 'Not repeating'
+                            }
                             keyboardType="number-pad"
                         />
                     )}
@@ -465,6 +495,71 @@ export function TodoForm({
                     <Text style={styles.errorText}>
                         {errors.recurrenceInterval.message}
                     </Text>
+                )}
+
+                {recurrenceFrequency !== null && (
+                    <>
+                        <Text style={styles.label}>Repeat based on</Text>
+
+                        <Controller
+                            control={control}
+                            name="recurrenceBasis"
+                            render={({ field: { value, onChange } }) => (
+                                <View style={styles.optionContainer}>
+                                    {(
+                                        [
+                                            ['Due date', 'due_date'],
+                                            [
+                                                'Completion date',
+                                                'completion_date',
+                                            ],
+                                        ] as const
+                                    ).map(([label, basis]) => {
+                                        const selected = value === basis;
+
+                                        return (
+                                            <Pressable
+                                                key={basis}
+                                                accessibilityRole="radio"
+                                                accessibilityState={{
+                                                    checked: selected,
+                                                }}
+                                                disabled={submitDisabled}
+                                                style={[
+                                                    styles.optionButton,
+                                                    selected &&
+                                                        styles.optionButtonSelected,
+                                                ]}
+                                                onPress={() => onChange(basis)}
+                                            >
+                                                <Text
+                                                    style={[
+                                                        styles.optionText,
+                                                        selected &&
+                                                            styles.optionTextSelected,
+                                                    ]}
+                                                >
+                                                    {label}
+                                                </Text>
+                                            </Pressable>
+                                        );
+                                    })}
+                                </View>
+                            )}
+                        />
+
+                        <Text style={styles.helperText}>
+                            {recurrenceBasis === 'completion_date'
+                                ? 'The interval starts on the day you complete this todo.'
+                                : 'Keeps the original schedule. If dates are missed, the next occurrence is in the future.'}
+                        </Text>
+
+                        {errors.recurrenceBasis && (
+                            <Text style={styles.errorText}>
+                                {errors.recurrenceBasis.message}
+                            </Text>
+                        )}
+                    </>
                 )}
 
                 <Text style={styles.label}>Notes</Text>
@@ -607,6 +702,12 @@ const styles = StyleSheet.create({
 
     clearDateText: {
         fontSize: 14,
+    },
+
+    helperText: {
+        color: '#666666',
+        fontSize: 13,
+        lineHeight: 19,
     },
 
     errorText: {
