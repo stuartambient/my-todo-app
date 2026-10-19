@@ -1,12 +1,15 @@
 // Run with: npx jest --preset jest-expo --runInBand
 import { beforeEach, expect, jest, test } from '@jest/globals';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import * as Notifications from '../localNotifications';
 import { scheduleTestNotification } from '../notifications';
 
+// Resolve Expo's lazy fetch shim while the Jest environment is still active.
+void globalThis.fetch;
+
 jest.mock('react-native', () => ({ Platform: { OS: 'android' } }));
-jest.mock('expo-notifications', () => ({
+jest.mock('../localNotifications', () => ({
     AndroidImportance: { HIGH: 4, NONE: 0 },
     SchedulableTriggerInputTypes: { TIME_INTERVAL: 'timeInterval' },
     setNotificationHandler: jest.fn(),

@@ -1,5 +1,6 @@
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+
+import * as Notifications from './localNotifications';
 
 const TEST_CHANNEL_ID = 'todoapp-notification-tests';
 export const TEST_NOTIFICATION_DELAY_SECONDS = 5;

@@ -27,6 +27,12 @@ and its config plugin, for example with `npx expo run:android`.
 The notification dependency is aligned to Expo SDK 57 (`~57.0.23`).
 This test does not read, update, or schedule reminders for saved todos.
 
+The local-notification adapter intentionally avoids the package's main entry
+point: that entry eagerly loads a remote-topic native module omitted from
+some Expo Go builds. Recheck the adapter's internal build paths on SDK upgrades.
+If Metro still shows the old import failure after pulling, stop it and restart
+with `npx expo start --clear`.
+
 Checks for this change:
 
 ```sh
