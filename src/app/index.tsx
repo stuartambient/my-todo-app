@@ -10,6 +10,7 @@ import {
     View,
 } from 'react-native';
 
+import { TestNotificationButton } from '@/components/TestNotificationButton';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
 import { useTodos } from '@/hooks/useTodos';
 import type { Todo, TodoStatus } from '@/types/todo';
@@ -253,6 +254,10 @@ export default function HomeScreen() {
                 </View>
             </View>
 
+            <View style={styles.notificationTestContainer}>
+                <TestNotificationButton />
+            </View>
+
             {loading && todos.length === 0 ? (
                 <View style={styles.centered}>
                     <ActivityIndicator size="large" />
@@ -327,6 +332,10 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingTop: 16,
         paddingBottom: 4,
+    },
+
+    notificationTestContainer: {
+        paddingHorizontal: 16,
     },
 
     filterBar: {
