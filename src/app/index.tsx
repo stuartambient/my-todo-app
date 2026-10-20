@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import { TestNotificationButton } from '@/components/TestNotificationButton';
+import { ReminderNotice } from '@/components/ReminderNotice';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
 import { useTodos } from '@/hooks/useTodos';
 import type { Todo, TodoStatus } from '@/types/todo';
@@ -256,6 +257,7 @@ export default function HomeScreen() {
 
             <View style={styles.notificationTestContainer}>
                 <TestNotificationButton />
+                <ReminderNotice />
             </View>
 
             {loading && todos.length === 0 ? (

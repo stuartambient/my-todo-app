@@ -5,6 +5,11 @@ import { getDatabase } from '@/database/database';
 import { mapTodoRow, type TodoRow } from '@/database/mappers';
 import { todoSchema, type TodoFormValues } from '@/schemas/todo.schema';
 import type { Todo } from '@/types/todo';
+import {
+    reconcileTodoReminders,
+    reportReminderError,
+    type ReminderTodo,
+} from '@/services/todoReminders';
 import { getNextOccurrenceDate, shiftReminder } from '@/utils/recurrence';
 
 export type CreateTodoInput = TodoFormValues;
@@ -17,6 +22,35 @@ function enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
     const result = writeQueue.then(operation);
     writeQueue = result.catch(() => undefined);
     return result;
+}
+
+async function synchronizeSavedReminders(
+    requestPermission = false,
+): Promise<void> {
+    try {
+        const database = await getDatabase();
+        const rows = await database.getAllAsync<{
+            id: string;
+            subject: string;
+            status: Todo['status'];
+            reminder_at: string | null;
+        }>('SELECT id, subject, status, reminder_at FROM todos');
+        const todos: ReminderTodo[] = rows.map((row) => ({
+            id: row.id,
+            subject: row.subject,
+            status: row.status,
+            reminderAt: row.reminder_at,
+        }));
+        await reconcileTodoReminders(todos, requestPermission);
+    } catch (error) {
+        reportReminderError(error);
+    }
+}
+
+// Startup/resume and user retries use the same queue as mutations, preventing
+// an older database snapshot from cancelling a just-saved reminder.
+export function refreshTodoReminders(requestPermission = false): Promise<void> {
+    return enqueueWrite(() => synchronizeSavedReminders(requestPermission));
 }
 
 async function insertTodo(
@@ -96,6 +130,11 @@ export function createTodo(input: CreateTodoInput): Promise<Todo> {
         );
         const todo = await getTodoById(id);
         if (!todo) throw new Error('Failed to create todo.');
+        await synchronizeSavedReminders(
+            Boolean(
+                todo.reminderAt && Date.parse(todo.reminderAt) > Date.now(),
+            ),
+        );
         return todo;
     });
 }
@@ -141,6 +180,11 @@ export function updateTodo(id: string, input: UpdateTodoInput): Promise<void> {
             anchorDate,
             new Date().toISOString(),
             id,
+        );
+        await synchronizeSavedReminders(
+            Boolean(
+                values.reminderAt && Date.parse(values.reminderAt) > Date.now(),
+            ),
         );
     });
 }
@@ -220,6 +264,7 @@ export function completeTodo(id: string): Promise<void> {
                 id,
             );
         });
+        await synchronizeSavedReminders();
     });
 }
 
@@ -232,6 +277,7 @@ export function reopenTodo(id: string): Promise<void> {
             new Date().toISOString(),
             id,
         );
+        await synchronizeSavedReminders();
     });
 }
 
@@ -239,5 +285,6 @@ export function deleteTodo(id: string): Promise<void> {
     return enqueueWrite(async () => {
         const database = await getDatabase();
         await database.runAsync('DELETE FROM todos WHERE id = ?', id);
+        await synchronizeSavedReminders();
     });
 }

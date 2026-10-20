@@ -25,7 +25,9 @@ your own development build, rebuild it once after adding this native module
 and its config plugin, for example with `npx expo run:android`.
 
 The notification dependency is aligned to Expo SDK 57 (`~57.0.23`).
-This test does not read, update, or schedule reminders for saved todos.
+The separate Test notification button does not read, update, or schedule saved
+todo reminders. Saved reminders are now connected through the app's normal
+save/edit/complete/delete flow; see [Saved todo reminders](todo-reminders.md).
 
 The local-notification adapter intentionally avoids the package's main entry
 point: that entry eagerly loads a remote-topic native module omitted from

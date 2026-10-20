@@ -24,8 +24,14 @@ test('the Android import graph schedules locally without requiring a remote-topi
         },
         ExpoNotificationScheduler: {
             scheduleNotificationAsync: scheduleNative,
+            getAllScheduledNotificationsAsync: jest.fn(async () => []),
+            cancelScheduledNotificationAsync: jest.fn(async () => null),
         },
         ExpoNotificationsHandlerModule: {},
+        ExpoNotificationPresenter: {
+            getPresentedNotificationsAsync: jest.fn(async () => []),
+            dismissNotificationAsync: jest.fn(async () => null),
+        },
     };
 
     const nativeLookups: string[] = [];
@@ -107,7 +113,7 @@ test('the Android import graph schedules locally without requiring a remote-topi
         }
         const evaluate = runInNewContext(
             `(function(require, module, exports) { ${compiled}\n})`,
-            { console },
+            { console, Date },
         );
         evaluate(loadDependency, module, module.exports);
         return module.exports;
@@ -122,4 +128,23 @@ test('the Android import graph schedules locally without requiring a remote-topi
     expect(nativeLookups).toContain('ExpoNotificationScheduler');
     expect(nativeLookups).not.toContain('ExpoTopicSubscriptionModule');
     expect(scheduleNative).toHaveBeenCalledTimes(1);
+
+    const reminders = loadFile(
+        path.resolve(__dirname, '../todoReminders.ts'),
+    ) as typeof import('../todoReminders');
+    const reminderAt = '2050-06-01T12:00:00.000Z';
+    await reminders.reconcileTodoReminders([
+        { id: 'saved', subject: 'Saved reminder', status: 'open', reminderAt },
+    ]);
+    expect(reminders.getReminderNotice().status).toBe('ready');
+    expect(scheduleNative).toHaveBeenCalledTimes(2);
+    expect(scheduleNative).toHaveBeenLastCalledWith(
+        'todo-reminder:saved',
+        expect.objectContaining({ title: 'Saved reminder' }),
+        expect.objectContaining({
+            type: 'date',
+            timestamp: Date.parse(reminderAt),
+        }),
+    );
+    expect(nativeLookups).not.toContain('ExpoTopicSubscriptionModule');
 });
