@@ -126,7 +126,7 @@ export async function reconcileTodoReminders(
             name: 'Todo reminders',
             description: 'Reminders for your saved todos.',
             importance: Notifications.AndroidImportance.HIGH,
-            sound: 'default',
+            // Omit channel sound to use Android's default; SDK 57 treats strings as filenames.
         });
 
         let permission = await Notifications.getPermissionsAsync();

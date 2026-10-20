@@ -34,7 +34,7 @@ export async function scheduleTestNotification(): Promise<TestNotificationResult
         name: 'Test notifications',
         description: 'Temporary notifications used to test TodoApp reminders.',
         importance: Notifications.AndroidImportance.HIGH,
-        sound: 'default',
+        // Omit channel sound to use Android's default; SDK 57 treats strings as filenames.
     });
 
     let permission = await Notifications.getPermissionsAsync();

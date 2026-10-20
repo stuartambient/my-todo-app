@@ -147,4 +147,13 @@ test('the Android import graph schedules locally without requiring a remote-topi
         }),
     );
     expect(nativeLookups).not.toContain('ExpoTopicSubscriptionModule');
+    const channelManager = nativeModules.ExpoNotificationChannelManager as {
+        setNotificationChannelAsync: ReturnType<typeof jest.fn>;
+    };
+    expect(channelManager.setNotificationChannelAsync).toHaveBeenCalledTimes(2);
+    for (const [, options] of channelManager.setNotificationChannelAsync.mock
+        .calls) {
+        // SDK 57 checks any channel sound string as a custom resource filename.
+        expect(options).not.toHaveProperty('sound');
+    }
 });
