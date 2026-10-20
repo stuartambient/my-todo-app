@@ -7,7 +7,7 @@ notification category must be enabled.
 
 This update only changes JavaScript/TypeScript. No package installation,
 database reset, or native rebuild is needed if the existing native build
-already passes the Test notification check. Pull the update and reload that
+already delivers saved todo reminders. Pull the update and reload that
 installed TodoApp from your running Metro session. Continue using the native
 TodoApp that worked, rather than Expo Go.
 
@@ -31,7 +31,7 @@ TodoApp that worked, rather than Expo Go.
   report a successful save/delete/completion as failed. The notice remains
   visible on the home screen and synchronization retries on app resume.
 - Only notifications whose identifiers start with `todo-reminder:` are
-  reconciled; the separate Test notification is left alone.
+  reconciled; notifications from other features are left alone.
 
 Reminders are scheduled locally with Android and do not require a push server.
 They can arrive while the app is in the background. Android permission, device

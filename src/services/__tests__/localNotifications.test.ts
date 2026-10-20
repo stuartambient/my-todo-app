@@ -122,13 +122,6 @@ test('the Android import graph schedules locally without requiring a remote-topi
         path.resolve(__dirname, '../notifications.ts'),
     ) as typeof import('../notifications');
     expect(() => service.configureNotificationHandler()).not.toThrow();
-    await expect(service.scheduleTestNotification()).resolves.toEqual({
-        status: 'scheduled',
-    });
-    expect(nativeLookups).toContain('ExpoNotificationScheduler');
-    expect(nativeLookups).not.toContain('ExpoTopicSubscriptionModule');
-    expect(scheduleNative).toHaveBeenCalledTimes(1);
-
     const reminders = loadFile(
         path.resolve(__dirname, '../todoReminders.ts'),
     ) as typeof import('../todoReminders');
@@ -137,7 +130,7 @@ test('the Android import graph schedules locally without requiring a remote-topi
         { id: 'saved', subject: 'Saved reminder', status: 'open', reminderAt },
     ]);
     expect(reminders.getReminderNotice().status).toBe('ready');
-    expect(scheduleNative).toHaveBeenCalledTimes(2);
+    expect(scheduleNative).toHaveBeenCalledTimes(1);
     expect(scheduleNative).toHaveBeenLastCalledWith(
         'todo-reminder:saved',
         expect.objectContaining({ title: 'Saved reminder' }),
@@ -150,7 +143,7 @@ test('the Android import graph schedules locally without requiring a remote-topi
     const channelManager = nativeModules.ExpoNotificationChannelManager as {
         setNotificationChannelAsync: ReturnType<typeof jest.fn>;
     };
-    expect(channelManager.setNotificationChannelAsync).toHaveBeenCalledTimes(2);
+    expect(channelManager.setNotificationChannelAsync).toHaveBeenCalledTimes(1);
     for (const [, options] of channelManager.setNotificationChannelAsync.mock
         .calls) {
         // SDK 57 checks any channel sound string as a custom resource filename.

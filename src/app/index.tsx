@@ -10,7 +10,6 @@ import {
     View,
 } from 'react-native';
 
-import { TestNotificationButton } from '@/components/TestNotificationButton';
 import { ReminderNotice } from '@/components/ReminderNotice';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
 import { useTodos } from '@/hooks/useTodos';
@@ -256,7 +255,6 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.notificationTestContainer}>
-                <TestNotificationButton />
                 <ReminderNotice />
             </View>
 
