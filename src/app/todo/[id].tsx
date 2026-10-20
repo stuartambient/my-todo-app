@@ -1,4 +1,4 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -193,12 +193,6 @@ export default function EditTodoScreen() {
 
     return (
         <View style={styles.screen}>
-            <Stack.Screen
-                options={{
-                    title: 'Edit Todo',
-                }}
-            />
-
             <View style={styles.formContainer}>
                 <TodoForm
                     todoTypes={todoTypes}

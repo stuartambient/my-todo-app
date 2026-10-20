@@ -21,5 +21,11 @@ export default function RootLayout() {
         return () => subscription.remove();
     }, []);
 
-    return <Stack />;
+    return (
+        <Stack>
+            <Stack.Screen name="index" options={{ title: 'Todos' }} />
+            <Stack.Screen name="todo/new" options={{ title: 'New Todo' }} />
+            <Stack.Screen name="todo/[id]" options={{ title: 'Edit Todo' }} />
+        </Stack>
+    );
 }

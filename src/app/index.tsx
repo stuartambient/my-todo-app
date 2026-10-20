@@ -1,5 +1,5 @@
-import { router, Stack, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { router, Stack, useFocusEffect, type Href } from 'expo-router';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -50,6 +50,7 @@ function formatDateHeading(dateKey: string): string {
 
 export default function HomeScreen() {
     const [status, setStatus] = useState<TodoStatus>('open');
+    const openingScreen = useRef(false);
 
     const { todos, loading, error, refresh, complete } = useTodos(status);
     const { todoTypes } = useTodoTypes();
@@ -104,6 +105,7 @@ export default function HomeScreen() {
 
     useFocusEffect(
         useCallback(() => {
+            openingScreen.current = false;
             void refresh();
         }, [refresh]),
     );
@@ -113,6 +115,13 @@ export default function HomeScreen() {
             new Map(todoTypes.map((todoType) => [todoType.id, todoType.name])),
         [todoTypes],
     );
+
+    function openScreen(href: Href) {
+        // A second press during the transition must not add another edit screen.
+        if (openingScreen.current) return;
+        openingScreen.current = true;
+        router.navigate(href);
+    }
 
     async function handleComplete(id: string) {
         try {
@@ -157,7 +166,12 @@ export default function HomeScreen() {
 
                 <Pressable
                     style={styles.todoContent}
-                    onPress={() => router.push(`/todo/${item.id}`)}
+                    onPress={() =>
+                        openScreen({
+                            pathname: '/todo/[id]',
+                            params: { id: item.id },
+                        })
+                    }
                 >
                     <View style={styles.subjectRow}>
                         <Text style={styles.subject} numberOfLines={1}>
@@ -314,7 +328,7 @@ export default function HomeScreen() {
                 style={styles.addButton}
                 accessibilityRole="button"
                 accessibilityLabel="Create todo"
-                onPress={() => router.push('/todo/new')}
+                onPress={() => openScreen('/todo/new')}
             >
                 <Text style={styles.addButtonText}>+</Text>
             </Pressable>
