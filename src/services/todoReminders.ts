@@ -62,15 +62,20 @@ export async function reconcileTodoReminders(
 
     try {
         const byId = new Map(todos.map((todo) => [todo.id, todo]));
-        const future = new Map(
+        const active = new Map(
             todos
                 .filter(
                     (todo) =>
                         todo.status === 'open' &&
                         todo.reminderAt !== null &&
-                        Date.parse(todo.reminderAt) > now,
+                        Number.isFinite(Date.parse(todo.reminderAt)),
                 )
                 .map((todo) => [TODO_REMINDER_PREFIX + todo.id, todo]),
+        );
+        const future = new Map(
+            [...active].filter(
+                ([, todo]) => Date.parse(todo.reminderAt!) > now,
+            ),
         );
         const scheduled =
             await Notifications.getAllScheduledNotificationsAsync();
@@ -82,13 +87,16 @@ export async function reconcileTodoReminders(
         // Cancel stale requests before any channel/permission work, so an edit
         // cannot leave its old reminder active if scheduling the replacement fails.
         for (const item of owned) {
-            const todo = future.get(item.identifier);
+            const todo = active.get(item.identifier);
             const matches =
                 todo &&
-                item.content.title === todo.subject &&
-                item.content.body === REMINDER_BODY &&
                 item.content.data?.reminderAt === todo.reminderAt &&
-                item.content.data?.reminderVersion === 1;
+                item.content.data?.reminderVersion === 1 &&
+                // Android may still be holding an inexact alarm after its time.
+                // Preserve it, including across a subject edit, until delivery.
+                (Date.parse(todo.reminderAt!) <= now ||
+                    (item.content.title === todo.subject &&
+                        item.content.body === REMINDER_BODY));
             if (!matches) {
                 await Notifications.cancelScheduledNotificationAsync(
                     item.identifier,
@@ -117,7 +125,7 @@ export async function reconcileTodoReminders(
             }
         }
 
-        if (future.size === 0) {
+        if (future.size === 0 && pending.size === 0) {
             setNotice({ status: 'ready' });
             return;
         }

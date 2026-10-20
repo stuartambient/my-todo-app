@@ -24,6 +24,11 @@ TodoApp that worked, rather than Expo Go.
 - The database remains the source of truth. Startup and returning to the app
   repair missing or stale requests without duplicating matching reminders.
 - Past reminder times stay saved but are not replayed as catch-up alerts.
+  An already scheduled alarm is preserved after its requested time if Android
+  has not delivered it yet. Returning to the app must not cancel a delayed
+  alarm. Completing/deleting the todo or clearing/changing the reminder still
+  cancels it. A subject edit after the scheduled time retains the delayed
+  alarm's original title so the reminder is not lost.
 - Permission is requested when saving a future reminder or tapping **Allow
   reminders**, not automatically on startup. A notice offers permission,
   Settings, or retry when notifications cannot be scheduled.

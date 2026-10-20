@@ -252,3 +252,58 @@ test('completed or edited todos remove stale reminders from the notification tra
         TODO_REMINDER_PREFIX + 'one',
     );
 });
+
+test('resuming at or after the due time preserves an alarm delayed by Android', async () => {
+    await reconcileTodoReminders([todo()]);
+    jest.setSystemTime(new Date(reminderAt));
+    await reconcileTodoReminders([todo()]);
+    jest.setSystemTime(new Date('2030-06-15T15:03:00.000Z'));
+    await reconcileTodoReminders([todo()]);
+    await reconcileTodoReminders([todo({ subject: 'Renamed while delayed' })]);
+    expect(pending.size).toBe(1);
+    expect(mocked.cancelScheduledNotificationAsync).not.toHaveBeenCalled();
+    expect(mocked.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+    // Once Android removes the delivered request, sync must not replay it.
+    pending.clear();
+    await reconcileTodoReminders([todo()]);
+    expect(mocked.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+});
+
+test.each(['completed', 'deleted', 'cleared', 'moved'] as const)(
+    'a delayed alarm still cancels when its todo is %s',
+    async (action) => {
+        await reconcileTodoReminders([todo()]);
+        jest.setSystemTime(new Date('2030-06-15T15:03:00.000Z'));
+        await reconcileTodoReminders(
+            action === 'deleted'
+                ? []
+                : [
+                      todo(
+                          action === 'completed'
+                              ? { status: 'completed' }
+                              : action === 'cleared'
+                                ? { reminderAt: null }
+                                : { reminderAt: '2030-06-15T16:00:00.000Z' },
+                      ),
+                  ],
+        );
+        expect(mocked.cancelScheduledNotificationAsync).toHaveBeenCalledWith(
+            TODO_REMINDER_PREFIX + 'one',
+        );
+        expect(pending.size).toBe(action === 'moved' ? 1 : 0);
+        if (action === 'moved') {
+            expect([...pending.values()][0].content.data?.reminderAt).toBe(
+                '2030-06-15T16:00:00.000Z',
+            );
+        }
+    },
+);
+
+test('blocked notifications cancel even an overdue pending alarm', async () => {
+    await reconcileTodoReminders([todo()]);
+    jest.setSystemTime(new Date('2030-06-15T15:03:00.000Z'));
+    mocked.getPermissionsAsync.mockResolvedValue(permission(false, false));
+    await reconcileTodoReminders([todo()]);
+    expect(pending.size).toBe(0);
+    expect(getReminderNotice().status).toBe('permission-denied');
+});
