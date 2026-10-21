@@ -1,16 +1,29 @@
 import { Platform } from 'react-native';
 
 import * as Notifications from './localNotifications';
+import { logReminderDiagnostic } from './reminderDiagnostics';
 
 export function configureNotificationHandler(): void {
     if (Platform.OS !== 'android') return;
 
     Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-            shouldShowBanner: true,
-            shouldShowList: true,
-            shouldPlaySound: true,
-            shouldSetBadge: false,
-        }),
+        handleNotification: async (notification) => {
+            logReminderDiagnostic('foreground-received', {
+                id: notification.request.identifier,
+                reminderAt: notification.request.content.data?.reminderAt,
+            });
+            return {
+                shouldShowBanner: true,
+                shouldShowList: true,
+                shouldPlaySound: true,
+                shouldSetBadge: false,
+            };
+        },
+        handleError: (id, error) => {
+            logReminderDiagnostic('presentation-error', {
+                id,
+                message: String(error),
+            });
+        },
     });
 }

@@ -83,3 +83,33 @@ denied permission, stale-request cleanup, duplicate prevention, overlapping
 writes/resume refreshes, database rollback and recovery after simulated native
 scheduling/cancellation failures. Automated tests do not confirm OS delivery;
 use the device checklist above for that.
+
+## Development diagnostics
+
+Development builds log `[Todo reminders]` records with the emulator's UTC clock,
+reminder identifiers and saved timestamps, without subjects or notes. `scheduled`
+means the native scheduling call resolved; `native-pending` reads back Expo's
+native request store. Neither proves that AlarmManager delivered the notification.
+`cancelled-stale` and `cancelled-permission` show app-side cancellations;
+`foreground-received` and `presentation-error` trace foreground handling only.
+There is no polling or change to release scheduling behavior.
+
+For an intermittent delivery failure, save a future reminder once, retain those
+logs, and check Android's alarm queue in a separate PowerShell terminal:
+
+```powershell
+adb shell date
+adb shell dumpsys alarm |
+    Select-String 'com.sambi.todoapp|todo-reminder:' -Context 3,8
+```
+
+After a miss, collect native notification errors without clearing logcat:
+
+```powershell
+adb logcat -d -v time 'expo-notifications:V' 'AndroidRuntime:E' '*:S'
+```
+
+Keep the server running and leave the reminder unchanged until the evidence is
+captured. A native pending request is not sufficient to distinguish an Android
+alarm delay from a notification presentation failure; compare it with dumpsys
+and native errors before changing scheduling or permissions.

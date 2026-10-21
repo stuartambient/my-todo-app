@@ -3,6 +3,10 @@ import { Platform } from 'react-native';
 import type { Todo } from '@/types/todo';
 
 import * as Notifications from './localNotifications';
+import {
+    logReminderDiagnostic,
+    reminderDiagnosticsEnabled,
+} from './reminderDiagnostics';
 
 export type ReminderTodo = Pick<
     Todo,
@@ -83,6 +87,18 @@ export async function reconcileTodoReminders(
             item.identifier.startsWith(TODO_REMINDER_PREFIX),
         );
         const pending = new Map(owned.map((item) => [item.identifier, item]));
+        logReminderDiagnostic('sync', {
+            requestedPermission: requestPermission,
+            reminders: [...active].map(([id, todo]) => ({
+                id,
+                reminderAt: todo.reminderAt,
+            })),
+            pending: owned.map((item) => ({
+                id: item.identifier,
+                reminderAt: item.content.data?.reminderAt,
+                trigger: item.trigger,
+            })),
+        });
 
         // Cancel stale requests before any channel/permission work, so an edit
         // cannot leave its old reminder active if scheduling the replacement fails.
@@ -102,6 +118,16 @@ export async function reconcileTodoReminders(
                     item.identifier,
                 );
                 pending.delete(item.identifier);
+                logReminderDiagnostic('cancelled-stale', {
+                    id: item.identifier,
+                    oldTime: item.content.data?.reminderAt,
+                    savedTime: todo?.reminderAt ?? null,
+                });
+            } else {
+                logReminderDiagnostic('retained', {
+                    id: item.identifier,
+                    reminderAt: todo.reminderAt,
+                });
             }
         }
 
@@ -149,12 +175,18 @@ export async function reconcileTodoReminders(
         const channel = permission.granted
             ? await Notifications.getNotificationChannelAsync(CHANNEL_ID)
             : null;
+        logReminderDiagnostic('permission-channel', {
+            granted: permission.granted,
+            importance: channel?.importance,
+            sound: channel?.sound,
+        });
         if (
             !permission.granted ||
             channel?.importance === Notifications.AndroidImportance.NONE
         ) {
             for (const id of pending.keys()) {
                 await Notifications.cancelScheduledNotificationAsync(id);
+                logReminderDiagnostic('cancelled-permission', { id });
             }
             setNotice(
                 !permission.granted
@@ -191,6 +223,32 @@ export async function reconcileTodoReminders(
                     channelId: CHANNEL_ID,
                 },
             });
+            logReminderDiagnostic('scheduled', {
+                id: identifier,
+                reminderAt: todo.reminderAt,
+            });
+        }
+        if (reminderDiagnosticsEnabled()) {
+            // Read the native request store back, without changing scheduling behavior.
+            try {
+                const confirmed =
+                    await Notifications.getAllScheduledNotificationsAsync();
+                logReminderDiagnostic('native-pending', {
+                    pending: confirmed
+                        .filter((item) =>
+                            item.identifier.startsWith(TODO_REMINDER_PREFIX),
+                        )
+                        .map((item) => ({
+                            id: item.identifier,
+                            reminderAt: item.content.data?.reminderAt,
+                            trigger: item.trigger,
+                        })),
+                });
+            } catch (error) {
+                logReminderDiagnostic('diagnostic-read-failed', {
+                    message: String(error),
+                });
+            }
         }
         setNotice({ status: 'ready' });
     } catch (error) {
