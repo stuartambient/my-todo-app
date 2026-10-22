@@ -3,24 +3,30 @@ import { Platform } from 'react-native';
 import type { Todo } from '@/types/todo';
 
 import * as Notifications from './localNotifications';
+import { configureReminderActions } from './notificationActionRegistration';
+import {
+    TODO_REMINDER_PREFIX,
+    REMINDER_CATEGORY,
+} from './reminderNotificationConstants';
 import { getExactAlarmAccess } from './exactAlarms';
 import {
     logReminderDiagnostic,
     reminderDiagnosticsEnabled,
 } from './reminderDiagnostics';
 
+export { TODO_REMINDER_PREFIX } from './reminderNotificationConstants';
+
 export type ReminderTodo = Pick<
     Todo,
     'id' | 'subject' | 'status' | 'reminderAt'
 >;
-export const TODO_REMINDER_PREFIX = 'todo-reminder:';
 const CHANNEL_ID = 'todoapp-reminders';
 const REMINDER_BODY = 'Your todo reminder is due.';
 
 type ReminderNotice =
     | { status: 'ready' | 'unsupported' }
     | { status: 'permission-denied'; canAskAgain: boolean }
-    | { status: 'channel-disabled' }
+    | { status: 'channel-disabled' | 'actions-unavailable' }
     | { status: 'error'; message: string }
     | { status: 'approximate'; canEnable: boolean };
 
@@ -55,6 +61,19 @@ export function reportReminderError(error: unknown): void {
     });
 }
 
+/** Ask outside the cross-runtime SQLite lock; a user can leave this dialog open. */
+export async function requestTodoReminderPermission(): Promise<void> {
+    if (Platform.OS !== 'android') return;
+    const permission = await Notifications.getPermissionsAsync();
+    if (permission.granted || !permission.canAskAgain) return;
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+        name: 'Todo reminders',
+        description: 'Reminders for your saved todos.',
+        importance: Notifications.AndroidImportance.HIGH,
+    });
+    await Notifications.requestPermissionsAsync();
+}
+
 /** Called through the repository write queue, always AFTER a database commit. */
 export async function reconcileTodoReminders(
     todos: ReminderTodo[],
@@ -86,6 +105,18 @@ export async function reconcileTodoReminders(
         );
         const timingAccess = await getExactAlarmAccess();
         const timing = timingAccess === 'exact' ? 'exact' : 'approximate';
+        let actionsReady = true;
+        if (future.size > 0) {
+            try {
+                await configureReminderActions();
+            } catch (error) {
+                actionsReady = false;
+                console.error(
+                    'Notification actions unavailable; keeping basic reminders:',
+                    error,
+                );
+            }
+        }
         const scheduled =
             await Notifications.getAllScheduledNotificationsAsync();
         const owned = scheduled.filter((item) =>
@@ -120,6 +151,10 @@ export async function reconcileTodoReminders(
                 (Date.parse(todo.reminderAt!) <= now ||
                     (item.content.title === todo.subject &&
                         item.content.body === REMINDER_BODY &&
+                        (actionsReady
+                            ? item.content.categoryIdentifier ===
+                              REMINDER_CATEGORY
+                            : !item.content.categoryIdentifier) &&
                         item.content.data?.reminderTiming === timing));
             if (!matches) {
                 await Notifications.cancelScheduledNotificationAsync(
@@ -218,6 +253,9 @@ export async function reconcileTodoReminders(
                 content: {
                     title: todo.subject,
                     body: REMINDER_BODY,
+                    categoryIdentifier: actionsReady
+                        ? REMINDER_CATEGORY
+                        : undefined,
                     sound: 'default',
                     data: {
                         todoId: todo.id,
@@ -260,12 +298,14 @@ export async function reconcileTodoReminders(
             }
         }
         setNotice(
-            future.size > 0 && timingAccess !== 'exact'
-                ? {
-                      status: 'approximate',
-                      canEnable: timingAccess === 'approximate',
-                  }
-                : { status: 'ready' },
+            future.size > 0 && !actionsReady
+                ? { status: 'actions-unavailable' }
+                : future.size > 0 && timingAccess !== 'exact'
+                  ? {
+                        status: 'approximate',
+                        canEnable: timingAccess === 'approximate',
+                    }
+                  : { status: 'ready' },
         );
     } catch (error) {
         // A native scheduling failure must never turn a committed save into a failed save.

@@ -32,11 +32,13 @@ export function ReminderNotice() {
     const message =
         notice.status === 'error'
             ? 'Your todos are saved, but some reminder notifications could not be updated. Tap Retry reminders.'
-            : notice.status === 'approximate'
-              ? notice.canEnable
-                  ? 'Reminders may arrive late. Allow precise reminders in Android’s Alarms & reminders settings to improve timing.'
-                  : 'Reminders may arrive late. Update TodoApp to enable precise reminders.'
-              : 'Your todos are saved. Allow notifications for TodoApp and its Todo reminders category to receive reminders.';
+            : notice.status === 'actions-unavailable'
+              ? 'Reminders are scheduled, but Complete and Snooze are unavailable. Tap Retry actions.'
+              : notice.status === 'approximate'
+                ? notice.canEnable
+                    ? 'Reminders may arrive late. Allow precise reminders in Android’s Alarms & reminders settings to improve timing.'
+                    : 'Reminders may arrive late. Update TodoApp to enable precise reminders.'
+                : 'Your todos are saved. Allow notifications for TodoApp and its Todo reminders category to receive reminders.';
 
     async function handlePress() {
         setBusy(true);
@@ -78,9 +80,11 @@ export function ReminderNotice() {
                               ? 'Open settings'
                               : notice.status === 'approximate'
                                 ? 'Enable precise reminders'
-                                : notice.status === 'error'
-                                  ? 'Retry reminders'
-                                  : 'Allow reminders'}
+                                : notice.status === 'actions-unavailable'
+                                  ? 'Retry actions'
+                                  : notice.status === 'error'
+                                    ? 'Retry reminders'
+                                    : 'Allow reminders'}
                     </Text>
                 </Pressable>
             )}

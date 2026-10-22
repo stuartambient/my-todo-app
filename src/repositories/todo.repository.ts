@@ -8,9 +8,12 @@ import type { Todo } from '@/types/todo';
 import {
     reconcileTodoReminders,
     reportReminderError,
+    requestTodoReminderPermission,
     type ReminderTodo,
 } from '@/services/todoReminders';
 import { getNextOccurrenceDate, shiftReminder } from '@/utils/recurrence';
+import { notifyTodoChanged } from '@/services/todoChanges';
+import { SNOOZE_MINUTES } from '@/services/reminderNotificationConstants';
 
 export type CreateTodoInput = TodoFormValues;
 export type UpdateTodoInput = CreateTodoInput;
@@ -30,24 +33,40 @@ async function synchronizeSavedReminders(
 ): Promise<void> {
     try {
         const database = await getDatabase();
-        const rows = await database.getAllAsync<{
-            id: string;
-            subject: string;
-            status: Todo['status'];
-            reminder_at: string | null;
-        }>('SELECT id, subject, status, reminder_at FROM todos');
-        const todos: ReminderTodo[] = rows.map((row) => ({
-            id: row.id,
-            subject: row.subject,
-            status: row.status,
-            reminderAt: row.reminder_at,
-        }));
-        await reconcileTodoReminders(
-            todos,
-            requestPermission,
-            Date.now(),
-            rescheduleFuture,
-        );
+        if (requestPermission) {
+            try {
+                await requestTodoReminderPermission();
+            } catch (error) {
+                reportReminderError(error);
+            }
+        }
+        // The JS write queue is local to one runtime. A real SQLite write lock
+        // serializes snapshot + native alarm changes across foreground/headless
+        // runtimes, and excludes todo mutations until reconciliation finishes.
+        await database.withExclusiveTransactionAsync(async (transaction) => {
+            await transaction.execAsync('PRAGMA busy_timeout = 5000;');
+            await transaction.runAsync(
+                'UPDATE todo_notification_sync SET revision = revision + 1 WHERE id = 1',
+            );
+            const rows = await transaction.getAllAsync<{
+                id: string;
+                subject: string;
+                status: Todo['status'];
+                reminder_at: string | null;
+            }>('SELECT id, subject, status, reminder_at FROM todos');
+            const todos: ReminderTodo[] = rows.map((row) => ({
+                id: row.id,
+                subject: row.subject,
+                status: row.status,
+                reminderAt: row.reminder_at,
+            }));
+            await reconcileTodoReminders(
+                todos,
+                false,
+                Date.now(),
+                rescheduleFuture,
+            );
+        });
     } catch (error) {
         reportReminderError(error);
     }
@@ -200,82 +219,158 @@ export function updateTodo(id: string, input: UpdateTodoInput): Promise<void> {
     });
 }
 
+async function completeTodoInTransaction(
+    transaction: SQLiteDatabase,
+    id: string,
+): Promise<void> {
+    await transaction.execAsync('PRAGMA busy_timeout = 5000;');
+    // Acquire the writer lock before taking a WAL read snapshot.
+    await transaction.runAsync(
+        'UPDATE todo_notification_sync SET revision = revision + 1 WHERE id = 1',
+    );
+    const row = await transaction.getFirstAsync<TodoRow>(
+        'SELECT * FROM todos WHERE id = ?',
+        id,
+    );
+    if (!row) throw new Error('Todo not found.');
+    if (row.status === 'completed') return;
+
+    const completedAt = new Date();
+    const now = completedAt.toISOString();
+    const todo = mapTodoRow(row);
+
+    if (todo.recurrenceFrequency) {
+        const successor = await transaction.getFirstAsync<{
+            id: string;
+        }>('SELECT id FROM todos WHERE recurrence_source_id = ?', id);
+
+        // Reopened occurrences keep their existing successor.
+        if (!successor) {
+            if (!todo.dueDate) {
+                throw new Error(
+                    'Choose a due date before completing this repeating todo.',
+                );
+            }
+            if (!todo.recurrenceInterval) {
+                throw new Error(
+                    'Choose a repeat interval before completing this todo.',
+                );
+            }
+
+            const basis = todo.recurrenceBasis ?? 'due_date';
+            const nextDate = getNextOccurrenceDate({
+                dueDate: todo.dueDate,
+                frequency: todo.recurrenceFrequency,
+                interval: todo.recurrenceInterval,
+                basis,
+                anchorDate: row.recurrence_anchor_date,
+                completedAt,
+            });
+            const nextValues = todoSchema.parse({
+                ...todo,
+                dueDate: nextDate,
+                reminderAt: shiftReminder(
+                    todo.reminderAt,
+                    todo.dueDate,
+                    nextDate,
+                ),
+                recurrenceBasis: basis,
+            });
+
+            await insertTodo(
+                transaction,
+                nextValues,
+                now,
+                basis === 'due_date'
+                    ? (row.recurrence_anchor_date ?? todo.dueDate)
+                    : nextDate,
+                id,
+            );
+        }
+    }
+
+    await transaction.runAsync(
+        `UPDATE todos SET status = 'completed', completed_at = ?, updated_at = ?
+         WHERE id = ? AND status = 'open'`,
+        now,
+        now,
+        id,
+    );
+}
+
 export function completeTodo(id: string): Promise<void> {
     return enqueueWrite(async () => {
         const database = await getDatabase();
+        await database.withExclusiveTransactionAsync((transaction) =>
+            completeTodoInTransaction(transaction, id),
+        );
+        await synchronizeSavedReminders();
+    });
+}
 
-        // Completion history and its successor commit together or roll back.
+export type ReminderActionInput = {
+    id: string;
+    reminderAt: string;
+    notificationDate: number;
+    action: 'complete' | 'snooze';
+};
+
+export type ReminderActionResult = 'completed' | 'snoozed' | 'ignored';
+
+/** One transaction protects actions delivered by both UI and headless runtimes. */
+export function applyTodoReminderAction(
+    input: ReminderActionInput,
+): Promise<ReminderActionResult> {
+    return enqueueWrite(async () => {
+        const database = await getDatabase();
+        let result: ReminderActionResult = 'ignored';
         await database.withExclusiveTransactionAsync(async (transaction) => {
+            await transaction.execAsync('PRAGMA busy_timeout = 5000;');
+            const key = JSON.stringify([
+                input.id,
+                input.reminderAt,
+                input.notificationDate,
+            ]);
+            const claimed = await transaction.runAsync(
+                'INSERT OR IGNORE INTO todo_notification_actions (response_key, processed_at) VALUES (?, ?)',
+                key,
+                new Date().toISOString(),
+            );
+            if (claimed.changes === 0) return;
             const row = await transaction.getFirstAsync<TodoRow>(
                 'SELECT * FROM todos WHERE id = ?',
-                id,
+                input.id,
             );
-            if (!row) throw new Error('Todo not found.');
-            if (row.status === 'completed') return;
-
-            const completedAt = new Date();
-            const now = completedAt.toISOString();
-            const todo = mapTodoRow(row);
-
-            if (todo.recurrenceFrequency) {
-                const successor = await transaction.getFirstAsync<{
-                    id: string;
-                }>('SELECT id FROM todos WHERE recurrence_source_id = ?', id);
-
-                // Reopened occurrences keep their existing successor.
-                if (!successor) {
-                    if (!todo.dueDate) {
-                        throw new Error(
-                            'Choose a due date before completing this repeating todo.',
-                        );
-                    }
-                    if (!todo.recurrenceInterval) {
-                        throw new Error(
-                            'Choose a repeat interval before completing this todo.',
-                        );
-                    }
-
-                    const basis = todo.recurrenceBasis ?? 'due_date';
-                    const nextDate = getNextOccurrenceDate({
-                        dueDate: todo.dueDate,
-                        frequency: todo.recurrenceFrequency,
-                        interval: todo.recurrenceInterval,
-                        basis,
-                        anchorDate: row.recurrence_anchor_date,
-                        completedAt,
-                    });
-                    const nextValues = todoSchema.parse({
-                        ...todo,
-                        dueDate: nextDate,
-                        reminderAt: shiftReminder(
-                            todo.reminderAt,
-                            todo.dueDate,
-                            nextDate,
-                        ),
-                        recurrenceBasis: basis,
-                    });
-
-                    await insertTodo(
-                        transaction,
-                        nextValues,
-                        now,
-                        basis === 'due_date'
-                            ? (row.recurrence_anchor_date ?? todo.dueDate)
-                            : nextDate,
-                        id,
-                    );
-                }
+            // Old buttons must not complete or postpone a newly edited reminder.
+            if (
+                !row ||
+                row.status !== 'open' ||
+                row.reminder_at !== input.reminderAt
+            )
+                return;
+            if (input.action === 'complete') {
+                await completeTodoInTransaction(transaction, input.id);
+                result = 'completed';
+            } else {
+                const now = new Date();
+                const next = new Date(
+                    now.getTime() + SNOOZE_MINUTES * 60_000,
+                ).toISOString();
+                await transaction.runAsync(
+                    'UPDATE todos SET reminder_at = ?, updated_at = ? WHERE id = ?',
+                    next,
+                    now.toISOString(),
+                    input.id,
+                );
+                result = 'snoozed';
             }
-
-            await transaction.runAsync(
-                `UPDATE todos SET status = 'completed', completed_at = ?, updated_at = ?
-                 WHERE id = ? AND status = 'open'`,
-                now,
-                now,
-                id,
-            );
         });
+        // Also repairs native scheduling if a duplicate follows a committed save
+        // whose notification operation failed. No second completion or snooze.
         await synchronizeSavedReminders();
+        // A foreground duplicate can follow a headless write; refresh its UI too.
+        notifyTodoChanged(input.id);
+        return result;
     });
 }
 

@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, expect, jest, test } from '@jest/globals';
 import { Platform } from 'react-native';
 
-import { getTodoById } from '@/repositories/todo.repository';
+import {
+    getTodoById,
+    applyTodoReminderAction,
+} from '@/repositories/todo.repository';
 import type { Todo } from '@/types/todo';
 
 import * as Notifications from '../localNotifications';
@@ -9,7 +12,10 @@ import { observeTodoNotificationTaps } from '../notificationNavigation';
 
 void globalThis.fetch;
 jest.mock('react-native', () => ({ Platform: { OS: 'android' } }));
-jest.mock('@/repositories/todo.repository', () => ({ getTodoById: jest.fn() }));
+jest.mock('@/repositories/todo.repository', () => ({
+    getTodoById: jest.fn(),
+    applyTodoReminderAction: jest.fn(),
+}));
 jest.mock('../localNotifications', () => ({
     DEFAULT_ACTION_IDENTIFIER: 'expo.modules.notifications.actions.DEFAULT',
     addNotificationResponseReceivedListener: jest.fn(),
@@ -60,6 +66,7 @@ beforeEach(() => {
     Object.assign(Platform, { OS: 'android' });
     last = null;
     lookup.mockImplementation(async (id) => row(id));
+    jest.mocked(applyTodoReminderAction).mockResolvedValue('completed');
     mocked.getLastNotificationResponse.mockImplementation(() => last);
     mocked.clearLastNotificationResponse.mockImplementation(() => {
         last = null;
@@ -256,4 +263,53 @@ test('non-Android platforms do not subscribe to Android notifications', () => {
     expect(
         mocked.addNotificationResponseReceivedListener,
     ).not.toHaveBeenCalled();
+});
+
+test('Complete runs without waiting for navigation and never opens the editor', async () => {
+    const observer = observeTodoNotificationTaps(callbacks);
+    const tap = response();
+    tap.actionIdentifier = 'todoComplete';
+    emit(tap);
+    await settle();
+    expect(applyTodoReminderAction).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'one', action: 'complete' }),
+    );
+    expect(callbacks.openTodo).not.toHaveBeenCalled();
+    expect(lookup).not.toHaveBeenCalled();
+    observer.stop();
+});
+
+test('actions for different todos all run even before navigator readiness', async () => {
+    const observer = observeTodoNotificationTaps(callbacks);
+    const first = response('one');
+    first.actionIdentifier = 'todoComplete';
+    const second = response('two');
+    second.actionIdentifier = 'todoSnooze';
+    emit(first);
+    emit(second);
+    emit(first);
+    await settle();
+    expect(applyTodoReminderAction).toHaveBeenCalledTimes(2);
+    expect(callbacks.openTodo).not.toHaveBeenCalled();
+    observer.stop();
+});
+
+test('a notification action cancels older pending tap navigation', async () => {
+    let resolve!: (todo: Todo) => void;
+    lookup.mockReturnValue(
+        new Promise<Todo>((done) => {
+            resolve = done;
+        }),
+    );
+    const observer = observeTodoNotificationTaps(callbacks);
+    observer.navigationReady();
+    emit(response());
+    const action = response();
+    action.actionIdentifier = 'todoComplete';
+    emit(action);
+    resolve(row('one'));
+    await settle();
+    expect(callbacks.openTodo).not.toHaveBeenCalled();
+    expect(applyTodoReminderAction).toHaveBeenCalledTimes(1);
+    observer.stop();
 });

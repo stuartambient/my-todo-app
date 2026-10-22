@@ -1,9 +1,12 @@
 # Open a todo from its reminder
 
 Tapping a saved todo reminder opens that todo's edit/details screen. This is a
-JavaScript-only change: pull it and reload TodoApp; the existing native build
-already includes the notification response APIs. No rebuild or data reset is
-needed. Keep Metro running while using the development build.
+navigation flow uses notification response APIs already in the native build.
+For the current Complete/Snooze feature, follow the installation steps in
+[Notification actions](notification-actions.md), including its native rebuild.
+No data reset is needed. Keep Metro running while using the development build.
+
+For Complete and Snooze buttons, see [Notification actions](notification-actions.md).
 
 ## Behavior
 
@@ -11,8 +14,9 @@ needed. Keep Metro running while using the development build.
 - On a cold launch, the last native response is read after subscribing to live
   taps. Navigation waits for the root navigator to be ready, and the todo lookup
   waits for SQLite initialization.
-- Only the default tap action on a `todo-reminder:<todoId>` notification with a
-  matching `data.todoId` is accepted. Arbitrary notification URLs are not followed.
+- Navigation accepts only the default tap action on a `todo-reminder:<todoId>` notification with a
+  matching `data.todoId` is accepted. Arbitrary notification URLs are not followed. Custom action buttons are
+  handled separately and do not navigate.
 - The todo is read from SQLite when tapped. Existing completed todos still open;
   a missing/deleted todo returns to the list with a short explanation.
 - Duplicate response delivery is handled once. A newer tap supersedes an older

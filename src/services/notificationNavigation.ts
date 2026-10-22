@@ -4,7 +4,11 @@ import { getTodoById } from '@/repositories/todo.repository';
 
 import * as Notifications from './localNotifications';
 import { logReminderDiagnostic } from './reminderDiagnostics';
-import { TODO_REMINDER_PREFIX } from './todoReminders';
+import { TODO_REMINDER_PREFIX } from './reminderNotificationConstants';
+import {
+    handleReminderAction,
+    parseReminderAction,
+} from './notificationActions';
 
 type Response = Notifications.NotificationResponse;
 type NavigationCallbacks = {
@@ -83,6 +87,19 @@ export function observeTodoNotificationTaps(callbacks: NavigationCallbacks) {
 
     function receive(response: Response) {
         if (stopped) return;
+        if (parseReminderAction(response)) {
+            const key = responseKey(response);
+            if (seen.has(key)) return;
+            seen.add(key);
+            // Mutation actions must all run; unlike navigation, a newer tap on
+            // another todo must not supersede a pending Complete or Snooze.
+            sequence += 1;
+            pending = null;
+            void handleReminderAction(response).catch((error) => {
+                if (!stopped) callbacks.onError(error);
+            });
+            return;
+        }
         const id = getTodoId(response);
         if (!id) return;
         const key = responseKey(response);

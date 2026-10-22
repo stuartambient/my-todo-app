@@ -26,3 +26,6 @@ export {
     DEFAULT_ACTION_IDENTIFIER,
 } from 'expo-notifications/build/NotificationsEmitter';
 export type { NotificationResponse } from 'expo-notifications/build/Notifications.types';
+
+export { setNotificationCategoryAsync } from 'expo-notifications/build/setNotificationCategoryAsync';
+export { registerTaskAsync } from 'expo-notifications/build/registerTaskAsync';

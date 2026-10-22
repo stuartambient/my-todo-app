@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
+
+import { subscribeTodoChanges } from '@/services/todoChanges';
 
 import {
     completeTodo,
@@ -49,6 +52,17 @@ export function useTodos(status: TodoStatus = 'open') {
             }
         }
     }, [status]);
+
+    useEffect(() => {
+        const unsubscribe = subscribeTodoChanges(() => void refresh());
+        const subscription = AppState.addEventListener('change', (state) => {
+            if (state === 'active') void refresh();
+        });
+        return () => {
+            unsubscribe();
+            subscription.remove();
+        };
+    }, [refresh]);
 
     const complete = useCallback(
         async (id: string) => {

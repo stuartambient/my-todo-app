@@ -5,6 +5,8 @@ Reminder date/time saved on each open todo. The notification title is the todo
 subject. The app must have notification permission and the **Todo reminders**
 notification category must be enabled.
 
+For Complete and Snooze buttons, see [Notification actions](notification-actions.md).
+
 ## Install precise-reminder support
 
 This update adds a local Android module for exact-alarm access. Stop Metro,
@@ -12,12 +14,13 @@ keep the emulator running, and run these from the project folder in PowerShell:
 
 ```powershell
 git pull
+npm.cmd ci
 npx.cmd expo prebuild --platform android
 npx.cmd expo run:android
 ```
 
-No database migration or reset is needed. Keep the same application package and
-signing setup. Leave the build terminal running when Metro starts. On later
+Existing todos are preserved; any additional tables are created automatically.
+Keep the same application package and signing setup. Leave the build terminal running when Metro starts. On later
 sessions use `npm.cmd start` and press **a** to launch TodoApp.
 
 Save an open todo with a future Reminder. If exact access is off, the home
@@ -138,7 +141,7 @@ npx jest --preset jest-expo --runInBand
 
 The integration check below uses Node 24+ with built-in SQLite. It runs actual
 repository, schema, migration, recurrence and reconciliation code against an
-in-memory database; only Android native APIs are replaced:
+temporary SQLite file; only Android native APIs are replaced:
 
 ```sh
 node scripts/verify-reminders.cjs

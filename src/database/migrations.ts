@@ -69,6 +69,17 @@ CREATE TABLE IF NOT EXISTS todos (
         ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS todo_notification_sync (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    revision INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO todo_notification_sync (id, revision) VALUES (1, 0);
+
+CREATE TABLE IF NOT EXISTS todo_notification_actions (
+    response_key TEXT PRIMARY KEY NOT NULL,
+    processed_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_todos_status
     ON todos(status);
 
@@ -88,6 +99,10 @@ CREATE INDEX IF NOT EXISTS idx_todos_category_id
  */
 export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
     await database.withExclusiveTransactionAsync(async (transaction) => {
+        await transaction.execAsync('PRAGMA busy_timeout = 5000;');
+        await transaction.runAsync(
+            'UPDATE todo_notification_sync SET revision = revision + 1 WHERE id = 1',
+        );
         const columns = await transaction.getAllAsync<{ name: string }>(
             'PRAGMA table_info(todos)',
         );

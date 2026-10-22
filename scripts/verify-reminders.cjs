@@ -1,11 +1,16 @@
 // Integration check: Node 24+; run `node scripts/verify-reminders.cjs`.
-// Uses real in-memory SQLite and application code; replaces only native APIs.
+// Uses a real temporary SQLite file and application code; replaces only native APIs.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
 const { randomUUID } = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
+const os = require('node:os');
+const databaseDirectory = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'todo-actions-'),
+);
+const databaseFilename = path.join(databaseDirectory, 'todo.db');
 const ts = require('typescript');
 const root = path.resolve(__dirname, '..');
 let checks = 0;
@@ -17,7 +22,7 @@ const check = (name, fn) => {
 
 class SQLiteAdapter {
     constructor() {
-        this.db = new DatabaseSync(':memory:');
+        this.db = new DatabaseSync(databaseFilename);
     }
     async execAsync(sql) {
         this.db.exec(sql);
@@ -47,6 +52,9 @@ class SQLiteAdapter {
     }
 }
 const database = new SQLiteAdapter();
+const competingConnection = new DatabaseSync(databaseFilename);
+let verifySyncLock = false;
+let syncLockChecked = false;
 const pending = new Map();
 let failScheduling = false;
 let failCancellation = false;
@@ -67,6 +75,18 @@ const native = {
         return { granted, canAskAgain: true };
     },
     scheduleNotificationAsync: async (request) => {
+        if (verifySyncLock) {
+            assert.throws(
+                () =>
+                    competingConnection
+                        .prepare(
+                            'UPDATE todo_notification_sync SET revision = revision + 1 WHERE id = 1',
+                        )
+                        .run(),
+                /locked/,
+            );
+            syncLockChecked = true;
+        }
         if (failScheduling)
             throw new Error('Simulated native scheduling failure');
         pending.set(request.identifier, request);
@@ -80,6 +100,8 @@ const native = {
 };
 const realLoad = Module._load;
 Module._load = function (request, parent, main) {
+    if (request === './notificationActionRegistration')
+        return { configureReminderActions: async () => {} };
     if (request === 'expo-modules-core')
         return {
             requireOptionalNativeModule: () => ({
@@ -375,10 +397,274 @@ async function main() {
             assert.equal(pending.has(idFor(expired.id)), false);
         },
     );
+
+    // Actual SQLite mutations used by both the UI response listener and headless task.
+    const actionTodo = await repository.createTodo({
+        ...values,
+        notes: 'Keep my notes',
+        priority: 'high',
+    });
+    const actionInput = {
+        id: actionTodo.id,
+        reminderAt,
+        notificationDate: 1,
+        action: 'snooze',
+    };
+    const beforeSnooze = Date.now();
+    const snoozeResult = await repository.applyTodoReminderAction(actionInput);
+    let snoozed = await repository.getTodoById(actionTodo.id);
+    const snoozedTime = snoozed.reminderAt;
+    check(
+        'Snooze changes only the reminder by ten minutes from processing time',
+        () => {
+            assert.equal(snoozeResult, 'snoozed');
+            assert.ok(Date.parse(snoozedTime) >= beforeSnooze + 600_000);
+            assert.ok(Date.parse(snoozedTime) <= Date.now() + 600_000);
+            for (const key of [
+                'dueDate',
+                'status',
+                'notes',
+                'priority',
+                'typeId',
+                'recurrenceFrequency',
+                'recurrenceInterval',
+                'recurrenceBasis',
+            ]) {
+                assert.equal(snoozed[key], actionTodo[key]);
+            }
+            assert.equal(
+                pending.get(idFor(actionTodo.id)).trigger.date.toISOString(),
+                snoozedTime,
+            );
+        },
+    );
+    await repository.applyTodoReminderAction(actionInput);
+    check('duplicate Snooze delivery does not move the reminder again', () => {
+        assert.equal(
+            database.db
+                .prepare('SELECT reminder_at FROM todos WHERE id = ?')
+                .get(actionTodo.id).reminder_at,
+            snoozedTime,
+        );
+    });
+    const conflicting = await repository.applyTodoReminderAction({
+        ...actionInput,
+        action: 'complete',
+    });
+    check(
+        'Complete and Snooze racing for the same card apply only the first action',
+        () => {
+            assert.equal(conflicting, 'ignored');
+            assert.equal(
+                database.db
+                    .prepare('SELECT status FROM todos WHERE id = ?')
+                    .get(actionTodo.id).status,
+                'open',
+            );
+        },
+    );
+    const stale = await repository.applyTodoReminderAction({
+        ...actionInput,
+        notificationDate: 2,
+        action: 'complete',
+    });
+    check(
+        'an old reminder time cannot complete an edited or snoozed todo',
+        () => {
+            assert.equal(stale, 'ignored');
+            assert.equal(
+                database.db
+                    .prepare('SELECT status FROM todos WHERE id = ?')
+                    .get(actionTodo.id).status,
+                'open',
+            );
+        },
+    );
+    const completedAction = {
+        id: actionTodo.id,
+        reminderAt: snoozedTime,
+        notificationDate: 3,
+        action: 'complete',
+    };
+    const completedResult =
+        await repository.applyTodoReminderAction(completedAction);
+    check(
+        'Complete from the next notification commits completion and cancels its alarm',
+        () => {
+            assert.equal(completedResult, 'completed');
+            assert.equal(
+                database.db
+                    .prepare('SELECT status FROM todos WHERE id = ?')
+                    .get(actionTodo.id).status,
+                'completed',
+            );
+            assert.equal(pending.has(idFor(actionTodo.id)), false);
+        },
+    );
+    await repository.reopenTodo(actionTodo.id);
+    const replayResult =
+        await repository.applyTodoReminderAction(completedAction);
+    check(
+        'replaying a consumed Complete does not complete a subsequently reopened todo',
+        () => {
+            assert.equal(replayResult, 'ignored');
+            assert.equal(
+                database.db
+                    .prepare('SELECT status FROM todos WHERE id = ?')
+                    .get(actionTodo.id).status,
+                'open',
+            );
+        },
+    );
+    await repository.deleteTodo(actionTodo.id);
+    const deletedResult = await repository.applyTodoReminderAction({
+        ...completedAction,
+        notificationDate: 4,
+    });
+    check('actions on a deleted todo are harmless', () => {
+        assert.equal(deletedResult, 'ignored');
+    });
+
+    const repeatingActionTodo = await repository.createTodo({
+        ...values,
+        recurrenceFrequency: 'day',
+        recurrenceInterval: 1,
+        recurrenceBasis: 'due_date',
+    });
+    const repeatingAction = {
+        id: repeatingActionTodo.id,
+        reminderAt,
+        notificationDate: 5,
+        action: 'complete',
+    };
+    await Promise.all([
+        repository.applyTodoReminderAction(repeatingAction),
+        repository.applyTodoReminderAction(repeatingAction),
+    ]);
+    check(
+        'duplicate recurring Complete creates exactly one successor and schedules it',
+        () => {
+            const successors = database.db
+                .prepare('SELECT * FROM todos WHERE recurrence_source_id = ?')
+                .all(repeatingActionTodo.id);
+            assert.equal(successors.length, 1);
+            assert.equal(pending.has(idFor(repeatingActionTodo.id)), false);
+            assert.equal(pending.has(idFor(successors[0].id)), true);
+        },
+    );
+
+    const retryActionTodo = await repository.createTodo({
+        ...values,
+        recurrenceFrequency: 'day',
+        recurrenceInterval: 1,
+        recurrenceBasis: 'due_date',
+    });
+    const retryAction = {
+        id: retryActionTodo.id,
+        reminderAt,
+        notificationDate: 6,
+        action: 'complete',
+    };
+    await database.runAsync(
+        'UPDATE todos SET due_date = NULL WHERE id = ?',
+        retryActionTodo.id,
+    );
+    await assert.rejects(
+        repository.applyTodoReminderAction(retryAction),
+        /due date/,
+    );
+    check(
+        'a failed recurrence rolls back both the completion and its action receipt',
+        () => {
+            assert.equal(
+                database.db
+                    .prepare('SELECT status FROM todos WHERE id = ?')
+                    .get(retryActionTodo.id).status,
+                'open',
+            );
+            const key = JSON.stringify([
+                retryAction.id,
+                retryAction.reminderAt,
+                retryAction.notificationDate,
+            ]);
+            assert.equal(
+                database.db
+                    .prepare(
+                        'SELECT * FROM todo_notification_actions WHERE response_key = ?',
+                    )
+                    .get(key),
+                undefined,
+            );
+        },
+    );
+    await database.runAsync(
+        'UPDATE todos SET due_date = ? WHERE id = ?',
+        dueDate,
+        retryActionTodo.id,
+    );
+    const retriedAction = await repository.applyTodoReminderAction(retryAction);
+    check('the same action can retry after a rolled-back failure', () => {
+        assert.equal(retriedAction, 'completed');
+    });
+
+    const schedulingActionTodo = await repository.createTodo(values);
+    const schedulingAction = {
+        id: schedulingActionTodo.id,
+        reminderAt,
+        notificationDate: 7,
+        action: 'snooze',
+    };
+    failScheduling = true;
+    await repository.applyTodoReminderAction(schedulingAction);
+    const savedSnooze = (await repository.getTodoById(schedulingActionTodo.id))
+        .reminderAt;
+    failScheduling = false;
+    await repository.applyTodoReminderAction(schedulingAction);
+    check(
+        'a duplicate repairs failed native scheduling without snoozing a second time',
+        () => {
+            assert.equal(
+                database.db
+                    .prepare('SELECT reminder_at FROM todos WHERE id = ?')
+                    .get(schedulingActionTodo.id).reminder_at,
+                savedSnooze,
+            );
+            assert.equal(
+                pending
+                    .get(idFor(schedulingActionTodo.id))
+                    .trigger.date.toISOString(),
+                savedSnooze,
+            );
+        },
+    );
+
+    verifySyncLock = true;
+    await repository.refreshTodoReminders();
+    verifySyncLock = false;
+    check(
+        'native alarm synchronization excludes a writer from a separate SQLite connection',
+        () => {
+            assert.equal(syncLockChecked, true);
+        },
+    );
+    check('the cross-runtime lock is released after reconciliation', () => {
+        assert.doesNotThrow(() =>
+            competingConnection
+                .prepare(
+                    'UPDATE todo_notification_sync SET revision = revision + 1 WHERE id = 1',
+                )
+                .run(),
+        );
+    });
     console.log(`\n${checks} SQLite integration checks passed.`);
-    database.db.close();
 }
-main().catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-});
+main()
+    .catch((error) => {
+        console.error(error);
+        process.exitCode = 1;
+    })
+    .finally(() => {
+        competingConnection.close();
+        database.db.close();
+        fs.rmSync(databaseDirectory, { recursive: true, force: true });
+    });

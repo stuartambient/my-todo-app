@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    AppState,
     Alert,
     Pressable,
     StyleSheet,
@@ -10,6 +11,7 @@ import {
 } from 'react-native';
 
 import { TodoForm } from '@/components/TodoForm';
+import { subscribeTodoChanges } from '@/services/todoChanges';
 import { useCategories } from '@/hooks/useCategories';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
 import {
@@ -48,12 +50,14 @@ function TodoEditor({ id }: { id: string }) {
 
     useEffect(() => {
         let cancelled = false;
+        let requestVersion = 0;
 
         async function loadTodo() {
+            const version = ++requestVersion;
             try {
                 const result = await getTodoById(id);
 
-                if (cancelled) {
+                if (cancelled || version !== requestVersion) {
                     return;
                 }
 
@@ -62,9 +66,10 @@ function TodoEditor({ id }: { id: string }) {
                     return;
                 }
 
+                setTodoError(null);
                 setTodo(result);
             } catch (err) {
-                if (!cancelled) {
+                if (!cancelled && version === requestVersion) {
                     setTodoError(
                         err instanceof Error
                             ? err
@@ -72,16 +77,24 @@ function TodoEditor({ id }: { id: string }) {
                     );
                 }
             } finally {
-                if (!cancelled) {
+                if (!cancelled && version === requestVersion) {
                     setLoadingTodo(false);
                 }
             }
         }
 
         void loadTodo();
+        const unsubscribe = subscribeTodoChanges((changedId) => {
+            if (changedId === id) void loadTodo();
+        });
+        const subscription = AppState.addEventListener('change', (state) => {
+            if (state === 'active') void loadTodo();
+        });
 
         return () => {
             cancelled = true;
+            unsubscribe();
+            subscription.remove();
         };
     }, [id]);
 
@@ -200,6 +213,7 @@ function TodoEditor({ id }: { id: string }) {
         <View style={styles.screen}>
             <View style={styles.formContainer}>
                 <TodoForm
+                    key={todo.updatedAt}
                     todoTypes={todoTypes}
                     /* categories={categories} */
                     initialValues={initialValues}

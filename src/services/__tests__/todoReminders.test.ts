@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 
 import * as Notifications from '../localNotifications';
 import { getExactAlarmAccess } from '../exactAlarms';
+import { configureReminderActions } from '../notificationActionRegistration';
 import {
     getReminderNotice,
     reconcileTodoReminders,
@@ -12,6 +13,9 @@ import {
 
 void globalThis.fetch;
 
+jest.mock('../notificationActionRegistration', () => ({
+    configureReminderActions: jest.fn(async () => {}),
+}));
 jest.mock('../exactAlarms', () => ({ getExactAlarmAccess: jest.fn() }));
 jest.mock('react-native', () => ({ Platform: { OS: 'android' } }));
 jest.mock('../localNotifications', () => ({
@@ -379,4 +383,29 @@ test('an older app binary continues approximate scheduling without crashing', as
         status: 'approximate',
         canEnable: false,
     });
+});
+
+test('notifications include the registered Complete/Snooze category', async () => {
+    await reconcileTodoReminders([todo()]);
+    expect(configureReminderActions).toHaveBeenCalled();
+    expect([...pending.values()][0].content.categoryIdentifier).toBe(
+        'todoReminderActions',
+    );
+});
+
+test('action registration failures preserve basic reminders and offer a retry', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.mocked(configureReminderActions).mockRejectedValueOnce(
+        new Error('Task registration failed'),
+    );
+    await reconcileTodoReminders([todo()]);
+    expect(pending.size).toBe(1);
+    expect([...pending.values()][0].content.categoryIdentifier).toBeUndefined();
+    expect(getReminderNotice().status).toBe('actions-unavailable');
+    await reconcileTodoReminders([todo()]);
+    expect([...pending.values()][0].content.categoryIdentifier).toBe(
+        'todoReminderActions',
+    );
+    expect(getReminderNotice().status).toBe('ready');
+    log.mockRestore();
 });

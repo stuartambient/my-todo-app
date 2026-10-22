@@ -11,6 +11,15 @@ test('the Android import graph schedules locally without requiring a remote-topi
     const scheduleNative = jest.fn(async () => 'local-test-id');
     let nativeResponse: object | null = null;
     const nativeModules: Record<string, object> = {
+        ExpoBackgroundNotificationTasksModule: {
+            registerTaskAsync: jest.fn(async () => null),
+        },
+        ExpoNotificationCategoriesModule: {
+            setNotificationCategoryAsync: jest.fn(async () => ({
+                identifier: 'todoReminderActions',
+                actions: [],
+            })),
+        },
         ExpoNotificationsEmitter: {
             getLastNotificationResponse: jest.fn(() => nativeResponse),
             clearLastNotificationResponse: jest.fn(() => {
@@ -85,6 +94,12 @@ test('the Android import graph schedules locally without requiring a remote-topi
         }).outputText;
         function loadDependency(request: string): unknown {
             if (request === 'expo-modules-core') return core;
+            if (request === 'expo-task-manager')
+                return {
+                    isAvailableAsync: async () => true,
+                    isTaskDefined: () => true,
+                    isTaskRegisteredAsync: async () => false,
+                };
             if (request === 'expo') {
                 return {
                     PermissionStatus: {
@@ -174,6 +189,24 @@ test('the Android import graph schedules locally without requiring a remote-topi
     notifications.clearLastNotificationResponse();
     expect(notifications.getLastNotificationResponse()).toBeNull();
     expect(nativeLookups).toContain('ExpoNotificationsEmitter');
+    const categories = nativeModules.ExpoNotificationCategoriesModule as {
+        setNotificationCategoryAsync: ReturnType<typeof jest.fn>;
+    };
+    expect(categories.setNotificationCategoryAsync).toHaveBeenCalledWith(
+        'todoReminderActions',
+        expect.arrayContaining([
+            expect.objectContaining({
+                identifier: 'todoComplete',
+                options: { opensAppToForeground: false },
+            }),
+            expect.objectContaining({
+                identifier: 'todoSnooze',
+                options: { opensAppToForeground: false },
+            }),
+        ]),
+        undefined,
+    );
+    expect(nativeLookups).toContain('ExpoBackgroundNotificationTasksModule');
     expect(nativeLookups).not.toContain('ExpoTopicSubscriptionModule');
     const channelManager = nativeModules.ExpoNotificationChannelManager as {
         setNotificationChannelAsync: ReturnType<typeof jest.fn>;

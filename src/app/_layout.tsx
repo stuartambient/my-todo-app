@@ -26,9 +26,9 @@ export default function RootLayout() {
                 Alert.alert('Todo unavailable', 'This todo has been deleted.');
             },
             onError: (error) => {
-                console.error('Unable to open reminder todo:', error);
+                console.error('Unable to handle todo notification:', error);
                 Alert.alert(
-                    'Unable to open todo',
+                    'Unable to handle reminder',
                     'Please open the todo from your list and try again.',
                 );
             },

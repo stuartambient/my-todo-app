@@ -10,6 +10,8 @@ let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 async function openAndInitializeDatabase(): Promise<SQLite.SQLiteDatabase> {
     const database = await SQLite.openDatabaseAsync(DATABASE_NAME);
 
+    // Foreground and headless notification runtimes can access the same file.
+    await database.execAsync('PRAGMA busy_timeout = 5000;');
     await database.execAsync(INITIAL_SCHEMA);
     await migrateDatabase(database);
     await seedDatabase(database);
