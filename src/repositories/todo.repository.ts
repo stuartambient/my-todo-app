@@ -26,6 +26,7 @@ function enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
 
 async function synchronizeSavedReminders(
     requestPermission = false,
+    rescheduleFuture = false,
 ): Promise<void> {
     try {
         const database = await getDatabase();
@@ -41,7 +42,12 @@ async function synchronizeSavedReminders(
             status: row.status,
             reminderAt: row.reminder_at,
         }));
-        await reconcileTodoReminders(todos, requestPermission);
+        await reconcileTodoReminders(
+            todos,
+            requestPermission,
+            Date.now(),
+            rescheduleFuture,
+        );
     } catch (error) {
         reportReminderError(error);
     }
@@ -50,7 +56,12 @@ async function synchronizeSavedReminders(
 // Startup/resume and user retries use the same queue as mutations, preventing
 // an older database snapshot from cancelling a just-saved reminder.
 export function refreshTodoReminders(requestPermission = false): Promise<void> {
-    return enqueueWrite(() => synchronizeSavedReminders(requestPermission));
+    // Android can cancel exact alarms when access is revoked, while Expo's
+    // saved request store still lists them. Re-arm future alarms on startup,
+    // resume and retry instead of treating that store as proof of an active alarm.
+    return enqueueWrite(() =>
+        synchronizeSavedReminders(requestPermission, true),
+    );
 }
 
 async function insertTodo(

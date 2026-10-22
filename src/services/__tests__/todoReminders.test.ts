@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, jest, test } from '@jest/globals';
 import { Platform } from 'react-native';
 
 import * as Notifications from '../localNotifications';
+import { getExactAlarmAccess } from '../exactAlarms';
 import {
     getReminderNotice,
     reconcileTodoReminders,
@@ -11,6 +12,7 @@ import {
 
 void globalThis.fetch;
 
+jest.mock('../exactAlarms', () => ({ getExactAlarmAccess: jest.fn() }));
 jest.mock('react-native', () => ({ Platform: { OS: 'android' } }));
 jest.mock('../localNotifications', () => ({
     AndroidImportance: { HIGH: 6, NONE: 2 },
@@ -52,6 +54,7 @@ const permission = (granted: boolean, canAskAgain = true) =>
 
 beforeEach(() => {
     jest.resetAllMocks();
+    jest.mocked(getExactAlarmAccess).mockResolvedValue('exact');
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2030-06-15T14:00:00.000Z'));
     Object.defineProperty(Platform, 'OS', {
@@ -306,4 +309,74 @@ test('blocked notifications cancel even an overdue pending alarm', async () => {
     await reconcileTodoReminders([todo()]);
     expect(pending.size).toBe(0);
     expect(getReminderNotice().status).toBe('permission-denied');
+});
+
+test('without exact access, reminders remain scheduled with an optional settings notice', async () => {
+    jest.mocked(getExactAlarmAccess).mockResolvedValue('approximate');
+    await reconcileTodoReminders([todo()]);
+    expect(pending.size).toBe(1);
+    expect([...pending.values()][0].content.data?.reminderTiming).toBe(
+        'approximate',
+    );
+    expect(getReminderNotice()).toEqual({
+        status: 'approximate',
+        canEnable: true,
+    });
+});
+
+test('granting exact access upgrades an existing future reminder', async () => {
+    jest.mocked(getExactAlarmAccess).mockResolvedValue('approximate');
+    await reconcileTodoReminders([todo()]);
+    jest.mocked(getExactAlarmAccess).mockResolvedValue('exact');
+    await reconcileTodoReminders([todo()]);
+    expect(pending.size).toBe(1);
+    expect(mocked.scheduleNotificationAsync).toHaveBeenCalledTimes(2);
+    expect([...pending.values()][0].content.data?.reminderTiming).toBe('exact');
+    expect(getReminderNotice().status).toBe('ready');
+});
+
+test('revoking exact access restores future requests using approximate delivery', async () => {
+    await reconcileTodoReminders([todo()]);
+    jest.mocked(getExactAlarmAccess).mockResolvedValue('approximate');
+    await reconcileTodoReminders([todo()], false, Date.now(), true);
+    expect(pending.size).toBe(1);
+    expect(mocked.scheduleNotificationAsync).toHaveBeenCalledTimes(2);
+    expect([...pending.values()][0].content.data?.reminderTiming).toBe(
+        'approximate',
+    );
+});
+
+test('resume re-arms a future alarm even if the native request store still lists it', async () => {
+    await reconcileTodoReminders([todo()]);
+    // Android may have cancelled the alarm without clearing Expo's request store.
+    await reconcileTodoReminders([todo()], false, Date.now(), true);
+    expect(mocked.scheduleNotificationAsync).toHaveBeenCalledTimes(2);
+    expect(pending.size).toBe(1);
+    // Re-arming the same identifier replaces the alarm rather than duplicating it.
+    expect(mocked.cancelScheduledNotificationAsync).not.toHaveBeenCalled();
+    jest.setSystemTime(new Date('2030-06-15T15:03:00.000Z'));
+    await reconcileTodoReminders([todo()], false, Date.now(), true);
+    expect(mocked.scheduleNotificationAsync).toHaveBeenCalledTimes(2);
+    expect(pending.size).toBe(1);
+});
+
+test('switching timing access never cancels an already overdue alarm', async () => {
+    jest.mocked(getExactAlarmAccess).mockResolvedValue('approximate');
+    await reconcileTodoReminders([todo()]);
+    jest.setSystemTime(new Date('2030-06-15T15:03:00.000Z'));
+    jest.mocked(getExactAlarmAccess).mockResolvedValue('exact');
+    await reconcileTodoReminders([todo()], false, Date.now(), true);
+    expect(mocked.cancelScheduledNotificationAsync).not.toHaveBeenCalled();
+    expect(mocked.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+    expect(pending.size).toBe(1);
+});
+
+test('an older app binary continues approximate scheduling without crashing', async () => {
+    jest.mocked(getExactAlarmAccess).mockResolvedValue('unavailable');
+    await reconcileTodoReminders([todo()]);
+    expect(pending.size).toBe(1);
+    expect(getReminderNotice()).toEqual({
+        status: 'approximate',
+        canEnable: false,
+    });
 });

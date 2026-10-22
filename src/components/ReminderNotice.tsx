@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 
 import { refreshTodoReminders } from '@/repositories/todo.repository';
+import { openExactAlarmSettings } from '@/services/exactAlarms';
 import {
     getReminderNotice,
     subscribeReminderNotice,
@@ -31,12 +32,18 @@ export function ReminderNotice() {
     const message =
         notice.status === 'error'
             ? 'Your todos are saved, but some reminder notifications could not be updated. Tap Retry reminders.'
-            : 'Your todos are saved. Allow notifications for TodoApp and its Todo reminders category to receive reminders.';
+            : notice.status === 'approximate'
+              ? notice.canEnable
+                  ? 'Reminders may arrive late. Allow precise reminders in Android’s Alarms & reminders settings to improve timing.'
+                  : 'Reminders may arrive late. Update TodoApp to enable precise reminders.'
+              : 'Your todos are saved. Allow notifications for TodoApp and its Todo reminders category to receive reminders.';
 
     async function handlePress() {
         setBusy(true);
         try {
-            if (settings) {
+            if (notice.status === 'approximate') {
+                await openExactAlarmSettings();
+            } else if (settings) {
                 await Linking.openSettings();
             } else {
                 await refreshTodoReminders(true);
@@ -56,23 +63,27 @@ export function ReminderNotice() {
             <Text style={styles.text} accessibilityLiveRegion="polite">
                 {message}
             </Text>
-            <Pressable
-                onPress={() => void handlePress()}
-                disabled={busy}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: busy, busy }}
-                style={styles.button}
-            >
-                <Text style={styles.buttonText}>
-                    {busy
-                        ? 'Checking…'
-                        : settings
-                          ? 'Open settings'
-                          : notice.status === 'error'
-                            ? 'Retry reminders'
-                            : 'Allow reminders'}
-                </Text>
-            </Pressable>
+            {(notice.status !== 'approximate' || notice.canEnable) && (
+                <Pressable
+                    onPress={() => void handlePress()}
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: busy, busy }}
+                    style={styles.button}
+                >
+                    <Text style={styles.buttonText}>
+                        {busy
+                            ? 'Checking…'
+                            : settings
+                              ? 'Open settings'
+                              : notice.status === 'approximate'
+                                ? 'Enable precise reminders'
+                                : notice.status === 'error'
+                                  ? 'Retry reminders'
+                                  : 'Allow reminders'}
+                    </Text>
+                </Pressable>
+            )}
         </View>
     );
 }

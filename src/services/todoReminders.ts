@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import type { Todo } from '@/types/todo';
 
 import * as Notifications from './localNotifications';
+import { getExactAlarmAccess } from './exactAlarms';
 import {
     logReminderDiagnostic,
     reminderDiagnosticsEnabled,
@@ -20,7 +21,8 @@ type ReminderNotice =
     | { status: 'ready' | 'unsupported' }
     | { status: 'permission-denied'; canAskAgain: boolean }
     | { status: 'channel-disabled' }
-    | { status: 'error'; message: string };
+    | { status: 'error'; message: string }
+    | { status: 'approximate'; canEnable: boolean };
 
 let notice: ReminderNotice = { status: 'ready' };
 const listeners = new Set<() => void>();
@@ -58,6 +60,7 @@ export async function reconcileTodoReminders(
     todos: ReminderTodo[],
     requestPermission = false,
     now = Date.now(),
+    rescheduleFuture = false,
 ): Promise<void> {
     if (Platform.OS !== 'android') {
         setNotice({ status: 'unsupported' });
@@ -81,6 +84,8 @@ export async function reconcileTodoReminders(
                 ([, todo]) => Date.parse(todo.reminderAt!) > now,
             ),
         );
+        const timingAccess = await getExactAlarmAccess();
+        const timing = timingAccess === 'exact' ? 'exact' : 'approximate';
         const scheduled =
             await Notifications.getAllScheduledNotificationsAsync();
         const owned = scheduled.filter((item) =>
@@ -89,6 +94,8 @@ export async function reconcileTodoReminders(
         const pending = new Map(owned.map((item) => [item.identifier, item]));
         logReminderDiagnostic('sync', {
             requestedPermission: requestPermission,
+            timingAccess,
+            rescheduleFuture,
             reminders: [...active].map(([id, todo]) => ({
                 id,
                 reminderAt: todo.reminderAt,
@@ -112,7 +119,8 @@ export async function reconcileTodoReminders(
                 // Preserve it, including across a subject edit, until delivery.
                 (Date.parse(todo.reminderAt!) <= now ||
                     (item.content.title === todo.subject &&
-                        item.content.body === REMINDER_BODY));
+                        item.content.body === REMINDER_BODY &&
+                        item.content.data?.reminderTiming === timing));
             if (!matches) {
                 await Notifications.cancelScheduledNotificationAsync(
                     item.identifier,
@@ -200,7 +208,7 @@ export async function reconcileTodoReminders(
         }
 
         for (const [identifier, todo] of future) {
-            if (pending.has(identifier)) continue;
+            if (pending.has(identifier) && !rescheduleFuture) continue;
             // Permission prompts can take long enough for a short reminder to expire.
             const date = new Date(todo.reminderAt!);
             if (date.getTime() <= Date.now()) continue;
@@ -215,6 +223,7 @@ export async function reconcileTodoReminders(
                         todoId: todo.id,
                         reminderAt: todo.reminderAt,
                         reminderVersion: 1,
+                        reminderTiming: timing,
                     },
                 },
                 trigger: {
@@ -250,7 +259,14 @@ export async function reconcileTodoReminders(
                 });
             }
         }
-        setNotice({ status: 'ready' });
+        setNotice(
+            future.size > 0 && timingAccess !== 'exact'
+                ? {
+                      status: 'approximate',
+                      canEnable: timingAccess === 'approximate',
+                  }
+                : { status: 'ready' },
+        );
     } catch (error) {
         // A native scheduling failure must never turn a committed save into a failed save.
         reportReminderError(error);

@@ -44,6 +44,10 @@ test('the Android import graph schedules locally without requiring a remote-topi
                 return { remove() {} };
             }
         },
+        requireOptionalNativeModule: (name: string) =>
+            name === 'TodoExactAlarms'
+                ? { canScheduleExactAlarmsAsync: async () => true }
+                : null,
         requireNativeModule: (name: string) => {
             nativeLookups.push(name);
             if (!(name in nativeModules)) {

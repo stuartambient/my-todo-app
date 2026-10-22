@@ -51,6 +51,7 @@ const pending = new Map();
 let failScheduling = false;
 let failCancellation = false;
 let granted = true;
+let exactAccess = true;
 let permissionRequests = 0;
 const native = {
     AndroidImportance: { HIGH: 6, NONE: 2 },
@@ -79,6 +80,12 @@ const native = {
 };
 const realLoad = Module._load;
 Module._load = function (request, parent, main) {
+    if (request === 'expo-modules-core')
+        return {
+            requireOptionalNativeModule: () => ({
+                canScheduleExactAlarmsAsync: async () => exactAccess,
+            }),
+        };
     if (request === 'expo-crypto') return { randomUUID };
     if (request === 'expo-sqlite')
         return { openDatabaseAsync: async () => database };
@@ -140,6 +147,40 @@ async function main() {
             values.subject,
         );
     });
+    const originalRequest = pending.get(idFor(first.id));
+    await repository.refreshTodoReminders();
+    check(
+        'resume re-arms a saved future reminder under the same identifier',
+        () => {
+            assert.notEqual(pending.get(idFor(first.id)), originalRequest);
+            assert.equal(pending.size, 1);
+        },
+    );
+    exactAccess = false;
+    await repository.refreshTodoReminders();
+    check(
+        'revoking exact access restores approximate delivery from SQLite',
+        () => {
+            assert.equal(
+                pending.get(idFor(first.id)).content.data.reminderTiming,
+                'approximate',
+            );
+            assert.equal(getReminderNotice().status, 'approximate');
+        },
+    );
+    exactAccess = true;
+    await repository.refreshTodoReminders();
+    check(
+        'granting exact access upgrades the existing saved reminder without duplicates',
+        () => {
+            assert.equal(
+                pending.get(idFor(first.id)).content.data.reminderTiming,
+                'exact',
+            );
+            assert.equal(pending.size, 1);
+        },
+    );
+
     const changedTime = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
     await repository.updateTodo(first.id, {
         ...values,
