@@ -9,7 +9,14 @@ void globalThis.fetch;
 
 test('the Android import graph schedules locally without requiring a remote-topic module', async () => {
     const scheduleNative = jest.fn(async () => 'local-test-id');
+    let nativeResponse: object | null = null;
     const nativeModules: Record<string, object> = {
+        ExpoNotificationsEmitter: {
+            getLastNotificationResponse: jest.fn(() => nativeResponse),
+            clearLastNotificationResponse: jest.fn(() => {
+                nativeResponse = null;
+            }),
+        },
         ExpoNotificationPermissionsModule: {
             getPermissionsAsync: jest.fn(async () => ({
                 granted: true,
@@ -40,6 +47,7 @@ test('the Android import graph schedules locally without requiring a remote-topi
         CodedError: class extends Error {},
         UnavailabilityError: class extends Error {},
         LegacyEventEmitter: class {
+            emit() {}
             addListener() {
                 return { remove() {} };
             }
@@ -143,6 +151,29 @@ test('the Android import graph schedules locally without requiring a remote-topi
             timestamp: Date.parse(reminderAt),
         }),
     );
+    const notifications = loadFile(
+        path.resolve(__dirname, '../localNotifications.ts'),
+    ) as typeof import('../localNotifications');
+    nativeResponse = {
+        actionIdentifier: notifications.DEFAULT_ACTION_IDENTIFIER,
+        notification: {
+            date: 1,
+            request: {
+                identifier: 'todo-reminder:saved',
+                content: { dataString: JSON.stringify({ todoId: 'saved' }) },
+            },
+        },
+    };
+    expect(
+        notifications.getLastNotificationResponse()?.notification.request
+            .content.data?.todoId,
+    ).toBe('saved');
+    const responseSubscription =
+        notifications.addNotificationResponseReceivedListener(() => {});
+    responseSubscription.remove();
+    notifications.clearLastNotificationResponse();
+    expect(notifications.getLastNotificationResponse()).toBeNull();
+    expect(nativeLookups).toContain('ExpoNotificationsEmitter');
     expect(nativeLookups).not.toContain('ExpoTopicSubscriptionModule');
     const channelManager = nativeModules.ExpoNotificationChannelManager as {
         setNotificationChannelAsync: ReturnType<typeof jest.fn>;

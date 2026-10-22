@@ -24,7 +24,12 @@ import type { Todo } from '@/types/todo';
 
 export default function EditTodoScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
+    // A notification can change the selected todo on an existing edit route.
+    // Remount its state and form so previous values cannot be saved onto another todo.
+    return <TodoEditor key={id} id={id} />;
+}
 
+function TodoEditor({ id }: { id: string }) {
     const [todo, setTodo] = useState<Todo | null>(null);
     const [loadingTodo, setLoadingTodo] = useState(true);
     const [todoError, setTodoError] = useState<Error | null>(null);

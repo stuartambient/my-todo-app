@@ -32,6 +32,9 @@ On Android before API 31 no special alarm access is needed. An older installed
 TodoApp binary without the new local module still schedules approximate
 reminders and explains that an app update is required for precise reminders.
 
+For opening a todo by tapping its notification, see
+[Notification navigation](notification-navigation.md).
+
 ## Behavior
 
 - Saving a future reminder schedules one notification for that todo.

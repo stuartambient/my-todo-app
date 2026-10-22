@@ -18,3 +18,11 @@ export { SchedulableTriggerInputTypes } from 'expo-notifications/build/Notificat
 export { setNotificationHandler } from 'expo-notifications/build/NotificationsHandler';
 export { scheduleNotificationAsync } from 'expo-notifications/build/scheduleNotificationAsync';
 export { setNotificationChannelAsync } from 'expo-notifications/build/setNotificationChannelAsync';
+
+export {
+    addNotificationResponseReceivedListener,
+    getLastNotificationResponse,
+    clearLastNotificationResponse,
+    DEFAULT_ACTION_IDENTIFIER,
+} from 'expo-notifications/build/NotificationsEmitter';
+export type { NotificationResponse } from 'expo-notifications/build/Notifications.types';
