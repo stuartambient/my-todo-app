@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# generated build output for the local Expo module
+/modules/todo-exact-alarms/android/build/
