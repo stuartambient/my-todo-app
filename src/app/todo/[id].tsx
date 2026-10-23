@@ -201,6 +201,7 @@ function TodoEditor({ id }: { id: string }) {
         notes: todo.notes,
         priority: todo.priority,
         dueDate: todo.dueDate,
+        dueTime: todo.dueTime,
         reminderAt: todo.reminderAt,
         recurrenceFrequency: todo.recurrenceFrequency,
         recurrenceInterval: todo.recurrenceInterval,

@@ -153,6 +153,7 @@ async function main() {
         notes: null,
         priority: 'normal',
         dueDate,
+        dueTime: null,
         reminderAt,
         recurrenceFrequency: null,
         recurrenceInterval: null,
@@ -422,6 +423,7 @@ async function main() {
             assert.ok(Date.parse(snoozedTime) <= Date.now() + 600_000);
             for (const key of [
                 'dueDate',
+                'dueTime',
                 'status',
                 'notes',
                 'priority',
@@ -656,6 +658,227 @@ async function main() {
                 .run(),
         );
     });
+    const pendingBeforeDueTime = pending.size;
+    const requestsBeforeDueTime = permissionRequests;
+    const timedValues = {
+        ...values,
+        subject: 'Timed appointment',
+        dueDate: '2030-06-15',
+        dueTime: '15:05',
+        reminderAt: null,
+    };
+    const timed = await repository.createTodo(timedValues);
+    check(
+        'a due time round-trips through SQLite without creating a reminder',
+        () => {
+            assert.equal(timed.dueTime, '15:05');
+            assert.equal(timed.reminderAt, null);
+            assert.equal(pending.size, pendingBeforeDueTime);
+            assert.equal(permissionRequests, requestsBeforeDueTime);
+        },
+    );
+    await repository.updateTodo(timed.id, { ...timedValues, dueTime: '00:00' });
+    check('editing a due time stores midnight correctly', () => {
+        assert.equal(
+            database.db
+                .prepare('SELECT due_time FROM todos WHERE id = ?')
+                .get(timed.id).due_time,
+            '00:00',
+        );
+    });
+    await repository.updateTodo(timed.id, { ...timedValues, reminderAt });
+    const timedReminder = pending.get(idFor(timed.id));
+    await repository.updateTodo(timed.id, {
+        ...timedValues,
+        dueTime: '18:30',
+        reminderAt,
+    });
+    check(
+        'changing only the due time preserves the separately scheduled reminder',
+        () => {
+            assert.equal(pending.get(idFor(timed.id)), timedReminder);
+            assert.equal(
+                database.db
+                    .prepare('SELECT reminder_at FROM todos WHERE id = ?')
+                    .get(timed.id).reminder_at,
+                reminderAt,
+            );
+        },
+    );
+    await repository.updateTodo(timed.id, {
+        ...timedValues,
+        dueTime: null,
+        reminderAt,
+    });
+    check('clearing a due time keeps the date and reminder', () => {
+        const row = database.db
+            .prepare('SELECT * FROM todos WHERE id = ?')
+            .get(timed.id);
+        assert.equal(row.due_time, null);
+        assert.equal(row.due_date, timedValues.dueDate);
+        assert.equal(row.reminder_at, reminderAt);
+    });
+    await repository.updateTodo(timed.id, {
+        ...timedValues,
+        dueDate: null,
+        dueTime: null,
+        reminderAt,
+    });
+    check('an undated todo can still have its independent reminder', () => {
+        assert.equal(pending.get(idFor(timed.id)), timedReminder);
+    });
+    await assert.rejects(
+        repository.updateTodo(timed.id, { ...timedValues, dueDate: null }),
+    );
+    check(
+        'an invalid time-without-date save leaves the previous row intact',
+        () => {
+            const row = database.db
+                .prepare('SELECT * FROM todos WHERE id = ?')
+                .get(timed.id);
+            assert.equal(row.due_date, null);
+            assert.equal(row.due_time, null);
+            assert.equal(row.reminder_at, reminderAt);
+        },
+    );
+
+    const orderValues = { ...timedValues, dueDate: '2031-06-15' };
+    const dateOnly = await repository.createTodo({
+        ...orderValues,
+        dueTime: null,
+        priority: 'high',
+    });
+    const afternoon = await repository.createTodo({
+        ...orderValues,
+        dueTime: '15:00',
+    });
+    const morning = await repository.createTodo({
+        ...orderValues,
+        dueTime: '09:00',
+    });
+    const midnight = await repository.createTodo({
+        ...orderValues,
+        dueTime: '00:00',
+    });
+    const later = await repository.createTodo({
+        ...orderValues,
+        dueDate: '2031-06-16',
+        dueTime: '08:00',
+    });
+    const undated = await repository.createTodo({
+        ...orderValues,
+        dueDate: null,
+        dueTime: null,
+    });
+    const orderedIds = [
+        midnight,
+        morning,
+        afternoon,
+        dateOnly,
+        later,
+        undated,
+    ].map((todo) => todo.id);
+    const openOrder = (await repository.getOpenTodos())
+        .filter((todo) => orderedIds.includes(todo.id))
+        .map((todo) => todo.id);
+    check(
+        'open todos sort by date, timed hours first, date-only last, then undated',
+        () => {
+            assert.deepEqual(openOrder, orderedIds);
+        },
+    );
+    await repository.completeTodo(afternoon.id);
+    const completedTime = (await repository.getCompletedTodos()).find(
+        (todo) => todo.id === afternoon.id,
+    );
+    check('completed history retains the saved due time', () => {
+        assert.equal(completedTime.dueTime, '15:00');
+    });
+
+    const timedRepeatValues = {
+        ...timedValues,
+        dueDate: '2030-01-31',
+        dueTime: '09:15',
+        recurrenceFrequency: 'month',
+        recurrenceInterval: 1,
+        recurrenceBasis: 'due_date',
+    };
+    const timedRepeat = await repository.createTodo(timedRepeatValues);
+    await repository.completeTodo(timedRepeat.id);
+    const timedSuccessor = await database.getFirstAsync(
+        'SELECT * FROM todos WHERE recurrence_source_id = ?',
+        timedRepeat.id,
+    );
+    check(
+        'monthly recurrence preserves the local due time without creating a reminder',
+        () => {
+            assert.equal(timedSuccessor.due_date, '2030-02-28');
+            assert.equal(timedSuccessor.due_time, '09:15');
+            assert.equal(timedSuccessor.reminder_at, null);
+            assert.equal(pending.has(idFor(timedSuccessor.id)), false);
+        },
+    );
+    await repository.updateTodo(timedSuccessor.id, {
+        ...timedRepeatValues,
+        dueDate: '2030-02-28',
+        dueTime: '10:30',
+    });
+    await repository.completeTodo(timedSuccessor.id);
+    check('editing only the time preserves the monthly calendar anchor', () => {
+        const next = database.db
+            .prepare('SELECT * FROM todos WHERE recurrence_source_id = ?')
+            .get(timedSuccessor.id);
+        assert.equal(next.due_date, '2030-03-31');
+        assert.equal(next.due_time, '10:30');
+    });
+    const completionRepeat = await repository.createTodo({
+        ...timedRepeatValues,
+        recurrenceBasis: 'completion_date',
+    });
+    await repository.completeTodo(completionRepeat.id);
+    check(
+        'completion-based recurrence also preserves the local due time',
+        () => {
+            const next = database.db
+                .prepare('SELECT * FROM todos WHERE recurrence_source_id = ?')
+                .get(completionRepeat.id);
+            assert.equal(next.due_time, '09:15');
+        },
+    );
+    const timedAction = await repository.createTodo({
+        ...timedRepeatValues,
+        reminderAt,
+    });
+    await repository.applyTodoReminderAction({
+        id: timedAction.id,
+        reminderAt,
+        notificationDate: 800,
+        action: 'snooze',
+    });
+    const snoozedTimedAction = await repository.getTodoById(timedAction.id);
+    check(
+        'notification Snooze changes the reminder while preserving its due time',
+        () => {
+            assert.equal(snoozedTimedAction.dueTime, '09:15');
+            assert.equal(snoozedTimedAction.dueDate, timedRepeatValues.dueDate);
+        },
+    );
+    await repository.applyTodoReminderAction({
+        id: timedAction.id,
+        reminderAt: snoozedTimedAction.reminderAt,
+        notificationDate: 801,
+        action: 'complete',
+    });
+    check(
+        'notification Complete carries the due time into the next occurrence',
+        () => {
+            const next = database.db
+                .prepare('SELECT * FROM todos WHERE recurrence_source_id = ?')
+                .get(timedAction.id);
+            assert.equal(next.due_time, '09:15');
+            assert.equal(next.due_date, '2030-02-28');
+        },
+    );
     console.log(`\n${checks} SQLite integration checks passed.`);
 }
 main()

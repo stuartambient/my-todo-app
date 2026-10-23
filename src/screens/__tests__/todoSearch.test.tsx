@@ -33,6 +33,7 @@ const makeTodo = (values: Partial<Todo>): Todo => ({
     categoryId: null,
     priority: 'normal',
     dueDate: '2030-06-15',
+    dueTime: null,
     reminderAt: null,
     recurrenceFrequency: null,
     recurrenceInterval: null,
@@ -142,4 +143,24 @@ test('returning from creation clears search and selects Open so the saved todo i
     expect(screen.getByLabelText('Search todos').props.value).toBe('');
     expect(screen.getByText('Pay electricity')).toBeTruthy();
     expect(refresh).toHaveBeenCalled();
+});
+
+test('shows local due times in both Open and Completed while keeping the date heading', async () => {
+    todos[0].dueTime = '15:05';
+    todos[3].dueTime = '00:00';
+    await render(<HomeScreen />);
+    const afternoon = new Date(2000, 0, 1, 15, 5).toLocaleTimeString(
+        undefined,
+        { hour: 'numeric', minute: '2-digit' },
+    );
+    expect(screen.getByText(`Todo · 2030-06-15 · ${afternoon}`)).toBeTruthy();
+    expect(
+        screen.getByRole('header', { name: /2030/ }).props.children,
+    ).toContain('2030');
+    await fireEvent.press(screen.getByRole('tab', { name: 'Completed' }));
+    const midnight = new Date(2000, 0, 1).toLocaleTimeString(undefined, {
+        hour: 'numeric',
+        minute: '2-digit',
+    });
+    expect(screen.getByText(`Todo · 2030-06-15 · ${midnight}`)).toBeTruthy();
 });

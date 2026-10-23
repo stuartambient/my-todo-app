@@ -94,10 +94,10 @@ async function insertTodo(
     await database.runAsync(
         `INSERT INTO todos (
             id, type_id, category_id, subject, notes, status, priority,
-            due_date, reminder_at, recurrence_frequency, recurrence_interval,
+            due_date, due_time, reminder_at, recurrence_frequency, recurrence_interval,
             recurrence_basis, recurrence_anchor_date, recurrence_source_id,
             created_at, updated_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
         id,
         input.typeId,
         input.categoryId,
@@ -105,6 +105,7 @@ async function insertTodo(
         input.notes,
         input.priority === 'high' ? 1 : 0,
         input.dueDate,
+        input.dueTime,
         input.reminderAt,
         input.recurrenceFrequency,
         input.recurrenceInterval,
@@ -133,7 +134,9 @@ export async function getOpenTodos(): Promise<Todo[]> {
         WHERE status = 'open'
         ORDER BY
             CASE WHEN due_date IS NULL THEN 1 ELSE 0 END,
-            due_date, due_time, priority DESC, created_at
+            due_date,
+            CASE WHEN due_time IS NULL THEN 1 ELSE 0 END,
+            due_time, priority DESC, created_at, id
     `);
     return rows.map(mapTodoRow);
 }
@@ -193,7 +196,7 @@ export function updateTodo(id: string, input: UpdateTodoInput): Promise<void> {
         await database.runAsync(
             `UPDATE todos SET
                 type_id = ?, category_id = ?, subject = ?, notes = ?, priority = ?,
-                due_date = ?, reminder_at = ?, recurrence_frequency = ?,
+                due_date = ?, due_time = ?, reminder_at = ?, recurrence_frequency = ?,
                 recurrence_interval = ?, recurrence_basis = ?,
                 recurrence_anchor_date = ?, updated_at = ?
             WHERE id = ?`,
@@ -203,6 +206,7 @@ export function updateTodo(id: string, input: UpdateTodoInput): Promise<void> {
             values.notes,
             values.priority === 'high' ? 1 : 0,
             values.dueDate,
+            values.dueTime,
             values.reminderAt,
             values.recurrenceFrequency,
             values.recurrenceInterval,

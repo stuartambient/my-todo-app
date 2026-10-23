@@ -52,6 +52,10 @@ export const todoSchema = z
         priority: z.enum(['normal', 'high']),
 
         dueDate: nullableDate,
+        dueTime: z
+            .string()
+            .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Choose a valid due time.')
+            .nullable(),
 
         reminderAt: nullableDateTime,
 
@@ -64,6 +68,13 @@ export const todoSchema = z
         recurrenceBasis: z.enum(['due_date', 'completion_date']).nullable(),
     })
     .superRefine((todo, context) => {
+        if (todo.dueTime !== null && todo.dueDate === null) {
+            context.addIssue({
+                code: 'custom',
+                path: ['dueTime'],
+                message: 'Choose a due date before adding a time.',
+            });
+        }
         if (
             todo.recurrenceFrequency !== null &&
             todo.recurrenceInterval === null

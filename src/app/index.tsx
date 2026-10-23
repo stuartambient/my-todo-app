@@ -22,8 +22,9 @@ import { ReminderNotice } from '@/components/ReminderNotice';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
 import { useTodos } from '@/hooks/useTodos';
 import { useRevealTodo } from '@/hooks/useRevealTodo';
+import { useMinuteTick } from '@/hooks/useMinuteTick';
 import type { Todo, TodoStatus } from '@/types/todo';
-import { getDueTime } from '@/utils/dueTime';
+import { formatDueTime, getDueTime } from '@/utils/dueTime';
 
 type TodoSection = {
     key: string;
@@ -62,6 +63,7 @@ export default function HomeScreen() {
         createdTodoId?: string;
     }>();
     const isFocused = useIsFocused();
+    useMinuteTick(isFocused);
     const handledCreatedTodo = useRef<string | undefined>(undefined);
     const [status, setStatus] = useState<TodoStatus>('open');
     const [search, setSearch] = useState('');
@@ -182,7 +184,9 @@ export default function HomeScreen() {
         const typeName = todoTypeNames.get(item.typeId) ?? 'Todo';
         const isCompleted = item.status === 'completed';
 
-        const dueTime = isCompleted ? null : getDueTime(item.dueDate);
+        const dueTime = isCompleted
+            ? null
+            : getDueTime(item.dueDate, item.dueTime);
 
         return (
             <View style={styles.todoRow}>
@@ -230,6 +234,9 @@ export default function HomeScreen() {
                     <Text style={styles.metadata}>
                         {typeName}
                         {item.dueDate ? ` · ${item.dueDate}` : ''}
+                        {item.dueDate && item.dueTime
+                            ? ` · ${formatDueTime(item.dueTime)}`
+                            : ''}
                     </Text>
 
                     {isCompleted && item.completedAt && (

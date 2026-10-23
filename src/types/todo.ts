@@ -19,6 +19,7 @@ export type Todo = {
     priority: TodoPriority;
 
     dueDate: string | null;
+    dueTime: string | null;
 
     reminderAt: string | null;
 

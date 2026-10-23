@@ -45,6 +45,7 @@ test('quick entry saves a subject with a default type and no optional details', 
         notes: null,
         priority: 'normal',
         dueDate: null,
+        dueTime: null,
         reminderAt: null,
         recurrenceFrequency: null,
         recurrenceInterval: null,
@@ -95,6 +96,7 @@ test('optional details survive collapsing and keep the existing scheduling value
         notes: 'Keep receipt',
         priority: 'high',
         dueDate: '2030-06-15',
+        dueTime: null,
         reminderAt: new Date(2030, 5, 14, 9, 30).toISOString(),
         recurrenceFrequency: 'month',
         recurrenceInterval: 2,
@@ -155,6 +157,7 @@ test('editing opens with all existing values and no automatic keyboard', async (
         notes: 'Reference 123',
         priority: 'high',
         dueDate: '2030-06-15',
+        dueTime: '16:30',
         reminderAt: null,
         recurrenceFrequency: 'month',
         recurrenceInterval: 1,
@@ -173,3 +176,68 @@ test('editing opens with all existing values and no automatic keyboard', async (
     await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
     expect(save.mock.calls[0][0]).toEqual(initialValues);
 });
+
+test('adding a due time saves local hours and minutes without adding a reminder', async () => {
+    await render(<TodoForm todoTypes={types} quickEntry onSubmit={save} />);
+    await fireEvent.changeText(screen.getByLabelText('Subject'), 'Appointment');
+    await fireEvent.press(screen.getByText('Show details'));
+    expect(
+        screen.getByRole('button', { name: 'Choose due time' }).props
+            .accessibilityState.disabled,
+    ).toBe(true);
+    await fireEvent.press(screen.getByText('Select date'));
+    const picker = jest
+        .mocked(DateTimePickerAndroid.open)
+        .mock.calls.at(-1)![0];
+    await act(() => picker.onValueChange!({} as never, new Date(2030, 5, 15)));
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Choose due time' }),
+    );
+    const timePicker = jest
+        .mocked(DateTimePickerAndroid.open)
+        .mock.calls.at(-1)![0];
+    expect(timePicker.mode).toBe('time');
+    await act(() =>
+        timePicker.onValueChange!({} as never, new Date(2030, 5, 15, 15, 5)),
+    );
+    await fireEvent.press(screen.getByText('Hide details'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(save.mock.calls[0][0]).toMatchObject({
+        dueDate: '2030-06-15',
+        dueTime: '15:05',
+        reminderAt: null,
+    });
+});
+
+test.each(['Clear due time', 'Clear due date'])(
+    '%s clears the time without changing the reminder',
+    async (button) => {
+        const initialValues: TodoFormValues = {
+            typeId: 'task',
+            categoryId: null,
+            subject: 'Appointment',
+            notes: null,
+            priority: 'normal',
+            dueDate: '2030-06-15',
+            dueTime: '00:00',
+            reminderAt: '2030-06-14T15:00:00.000Z',
+            recurrenceFrequency: null,
+            recurrenceInterval: null,
+            recurrenceBasis: null,
+        };
+        await render(
+            <TodoForm
+                todoTypes={types}
+                initialValues={initialValues}
+                onSubmit={save}
+            />,
+        );
+        await fireEvent.press(screen.getByRole('button', { name: button }));
+        await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+        expect(save.mock.calls[0][0]).toMatchObject({
+            dueDate: button === 'Clear due date' ? null : '2030-06-15',
+            dueTime: null,
+            reminderAt: initialValues.reminderAt,
+        });
+    },
+);

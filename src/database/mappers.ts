@@ -80,7 +80,7 @@ export function mapTodoRow(row: TodoRow): Todo {
         status: row.status as TodoStatus,
         priority: row.priority === 1 ? 'high' : 'normal',
         dueDate: row.due_date,
-        /* dueTime: row.due_time, */
+        dueTime: row.due_time,
         reminderAt: row.reminder_at,
         recurrenceFrequency:
             row.recurrence_frequency as RecurrenceFrequency | null,

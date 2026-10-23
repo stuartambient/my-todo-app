@@ -5,21 +5,26 @@ export type DueTimeResult = {
     status: DueTimeStatus;
 };
 
-function getEndOfDueDate(dueDate: string): Date {
+function getDueDateTime(dueDate: string, dueTime: string | null): Date {
     const [year, month, day] = dueDate.split('-').map(Number);
 
+    if (dueTime) {
+        const [hour, minute] = dueTime.split(':').map(Number);
+        return new Date(year, month - 1, day, hour, minute, 0, 0);
+    }
     return new Date(year, month - 1, day, 23, 59, 59, 999);
 }
 
 export function getDueTime(
     dueDate: string | null,
+    dueTime: string | null = null,
     now = new Date(),
 ): DueTimeResult | null {
     if (!dueDate) {
         return null;
     }
 
-    const due = getEndOfDueDate(dueDate);
+    const due = getDueDateTime(dueDate, dueTime);
     const difference = due.getTime() - now.getTime();
 
     if (difference <= 0) {
@@ -51,4 +56,13 @@ export function getDueTime(
         label,
         status: difference <= 24 * 60 * 60 * 1000 ? 'soon' : 'normal',
     };
+}
+
+// Stored as local HH:mm, independent of the reminder timestamp and timezone.
+export function formatDueTime(value: string): string {
+    const [hour, minute] = value.split(':').map(Number);
+    return new Date(2000, 0, 1, hour, minute).toLocaleTimeString(undefined, {
+        hour: 'numeric',
+        minute: '2-digit',
+    });
 }
