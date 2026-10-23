@@ -1,7 +1,8 @@
 # Optional due times
 
-In New Todo, expand Show details. Select a Due date, then use Due time
-(optional) to open the Android time picker. Edit Todo exposes the same field.
+In New Todo, expand Show details. Select a Due date, then use Add time beside it to open the Android time picker.
+Date and optional time share one row in both New and Edit, with separate clear
+controls beneath their values.
 Time is optional: selecting a date alone does not fill it. The picker starts at
 9 AM only as an uncommitted suggestion; confirming is required to save a time.
 Canceling the picker leaves the value unchanged. Midnight is a valid time.
