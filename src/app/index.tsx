@@ -7,6 +7,7 @@ import {
     Pressable,
     StyleSheet,
     Text,
+    TextInput,
     View,
 } from 'react-native';
 
@@ -50,25 +51,39 @@ function formatDateHeading(dateKey: string): string {
 
 export default function HomeScreen() {
     const [status, setStatus] = useState<TodoStatus>('open');
+    const [search, setSearch] = useState('');
     const openingScreen = useRef(false);
 
     const { todos, loading, error, refresh, complete } = useTodos(status);
     const { todoTypes } = useTodoTypes();
 
     const showingCompleted = status === 'completed';
+    const searchTerm = search.trim().toLowerCase();
+    const searching = searchTerm.length > 0;
+    const visibleTodos = useMemo(
+        () =>
+            searching
+                ? todos.filter(
+                      (todo) =>
+                          todo.subject.toLowerCase().includes(searchTerm) ||
+                          todo.notes?.toLowerCase().includes(searchTerm),
+                  )
+                : todos,
+        [todos, searching, searchTerm],
+    );
 
     const sections = useMemo<TodoSection[]>(() => {
         // Preserve the existing completed-list order without headings.
         if (showingCompleted) {
-            return todos.length > 0
-                ? [{ key: 'completed', title: null, data: todos }]
+            return visibleTodos.length > 0
+                ? [{ key: 'completed', title: null, data: visibleTodos }]
                 : [];
         }
 
         const datedGroups = new Map<string, Todo[]>();
         const undatedTodos: Todo[] = [];
 
-        for (const todo of todos) {
+        for (const todo of visibleTodos) {
             if (!todo.dueDate) {
                 undatedTodos.push(todo);
                 continue;
@@ -101,7 +116,7 @@ export default function HomeScreen() {
         }
 
         return result;
-    }, [todos, showingCompleted]);
+    }, [visibleTodos, showingCompleted]);
 
     useFocusEffect(
         useCallback(() => {
@@ -268,6 +283,36 @@ export default function HomeScreen() {
                 </View>
             </View>
 
+            <View style={styles.searchContainer}>
+                <TextInput
+                    style={styles.searchInput}
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder={
+                        showingCompleted
+                            ? 'Search completed todos'
+                            : 'Search open todos'
+                    }
+                    placeholderTextColor="#777777"
+                    accessibilityLabel="Search todos"
+                    accessibilityHint="Search subjects and notes in the selected tab"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                    underlineColorAndroid="transparent"
+                />
+                {search.length > 0 && (
+                    <Pressable
+                        style={styles.clearSearchButton}
+                        accessibilityRole="button"
+                        accessibilityLabel="Clear search"
+                        onPress={() => setSearch('')}
+                    >
+                        <Text style={styles.clearSearchText}>Clear</Text>
+                    </Pressable>
+                )}
+            </View>
+
             <View style={styles.notificationTestContainer}>
                 <ReminderNotice />
             </View>
@@ -303,21 +348,29 @@ export default function HomeScreen() {
                         ) : null
                     }
                     stickySectionHeadersEnabled={false}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
                     contentContainerStyle={
-                        todos.length === 0 ? styles.emptyList : styles.list
+                        visibleTodos.length === 0
+                            ? styles.emptyList
+                            : styles.list
                     }
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
                             <Text style={styles.emptyTitle}>
-                                {showingCompleted
-                                    ? 'No completed todos'
-                                    : 'No open todos'}
+                                {searching
+                                    ? 'No matching todos'
+                                    : showingCompleted
+                                      ? 'No completed todos'
+                                      : 'No open todos'}
                             </Text>
 
                             <Text style={styles.emptyText}>
-                                {showingCompleted
-                                    ? 'Todos you complete will appear here.'
-                                    : 'Tap + to create a todo.'}
+                                {searching
+                                    ? `Try different words or clear your search. Searching ${showingCompleted ? 'completed' : 'open'} todos only.`
+                                    : showingCompleted
+                                      ? 'Todos you complete will appear here.'
+                                      : 'Tap + to create a todo.'}
                             </Text>
                         </View>
                     }
@@ -346,6 +399,40 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingTop: 16,
         paddingBottom: 4,
+    },
+
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: 16,
+        marginTop: 8,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#cccccc',
+        borderRadius: 10,
+        backgroundColor: '#f7f7f7',
+    },
+
+    searchInput: {
+        flex: 1,
+        minWidth: 0,
+        minHeight: 48,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        color: '#222222',
+        fontSize: 16,
+    },
+
+    clearSearchButton: {
+        minHeight: 48,
+        justifyContent: 'center',
+        paddingHorizontal: 12,
+    },
+
+    clearSearchText: {
+        color: '#333333',
+        fontSize: 14,
+        fontWeight: '600',
     },
 
     notificationTestContainer: {
