@@ -1,5 +1,12 @@
 import { router, Stack } from 'expo-router';
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
+import {
+    ActivityIndicator,
+    Alert,
+    Keyboard,
+    StyleSheet,
+    Text,
+    View,
+} from 'react-native';
 
 import { TodoForm } from '@/components/TodoForm';
 import { useCategories } from '@/hooks/useCategories';
@@ -25,8 +32,12 @@ export default function NewTodoScreen() {
 
     async function handleSubmit(values: TodoFormValues) {
         try {
-            await createTodo(values);
-            router.back();
+            const todo = await createTodo(values);
+            Keyboard.dismiss();
+            router.dismissTo({
+                pathname: '/',
+                params: { createdTodoId: todo.id },
+            });
         } catch (err) {
             console.error('Failed to create todo:', err);
 
@@ -64,7 +75,8 @@ export default function NewTodoScreen() {
             <TodoForm
                 todoTypes={todoTypes}
                 /* categories={categories} */
-                submitLabel="Create Todo"
+                quickEntry
+                submitLabel="Save Todo"
                 onSubmit={handleSubmit}
             />
         </>

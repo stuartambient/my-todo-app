@@ -1,4 +1,11 @@
-import { router, Stack, useFocusEffect, type Href } from 'expo-router';
+import {
+    router,
+    Stack,
+    useFocusEffect,
+    useLocalSearchParams,
+    useIsFocused,
+    type Href,
+} from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -14,6 +21,7 @@ import {
 import { ReminderNotice } from '@/components/ReminderNotice';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
 import { useTodos } from '@/hooks/useTodos';
+import { useRevealTodo } from '@/hooks/useRevealTodo';
 import type { Todo, TodoStatus } from '@/types/todo';
 import { getDueTime } from '@/utils/dueTime';
 
@@ -50,6 +58,11 @@ function formatDateHeading(dateKey: string): string {
 }
 
 export default function HomeScreen() {
+    const { createdTodoId } = useLocalSearchParams<{
+        createdTodoId?: string;
+    }>();
+    const isFocused = useIsFocused();
+    const handledCreatedTodo = useRef<string | undefined>(undefined);
     const [status, setStatus] = useState<TodoStatus>('open');
     const [search, setSearch] = useState('');
     const openingScreen = useRef(false);
@@ -118,11 +131,27 @@ export default function HomeScreen() {
         return result;
     }, [visibleTodos, showingCompleted]);
 
+    const finishReveal = useCallback(() => {
+        router.setParams({ createdTodoId: undefined });
+    }, []);
+    const { list, onViewableItemsChanged, onScrollToIndexFailed } =
+        useRevealTodo(
+            sections,
+            createdTodoId,
+            isFocused && !showingCompleted && !searching && !loading && !error,
+            finishReveal,
+        );
+
     useFocusEffect(
         useCallback(() => {
             openingScreen.current = false;
+            if (createdTodoId && handledCreatedTodo.current !== createdTodoId) {
+                handledCreatedTodo.current = createdTodoId;
+                setStatus('open');
+                setSearch('');
+            }
             void refresh();
-        }, [refresh]),
+        }, [refresh, createdTodoId]),
     );
 
     const todoTypeNames = useMemo(
@@ -334,6 +363,9 @@ export default function HomeScreen() {
                 </View>
             ) : (
                 <SectionList<Todo, TodoSection>
+                    ref={list}
+                    onViewableItemsChanged={onViewableItemsChanged}
+                    onScrollToIndexFailed={onScrollToIndexFailed}
                     sections={sections}
                     keyExtractor={(item) => item.id}
                     renderItem={renderTodo}

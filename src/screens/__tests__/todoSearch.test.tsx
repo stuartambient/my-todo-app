@@ -1,14 +1,20 @@
 import { beforeEach, expect, jest, test } from '@jest/globals';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
+import { useLocalSearchParams } from 'expo-router';
 import HomeScreen from '@/app/index';
 import { useTodos } from '@/hooks/useTodos';
 import type { Todo, TodoStatus } from '@/types/todo';
 
 jest.mock('expo-router', () => ({
-    router: { navigate: jest.fn() },
+    router: { navigate: jest.fn(), setParams: jest.fn() },
+    useLocalSearchParams: jest.fn(() => ({})),
+    useIsFocused: () => true,
     Stack: { Screen: () => null },
-    useFocusEffect: jest.fn(),
+    useFocusEffect: (callback: () => void) => {
+        const React = jest.requireActual<typeof import('react')>('react');
+        React.useEffect(callback, [callback]);
+    },
 }));
 jest.mock('@/components/ReminderNotice', () => ({
     ReminderNotice: () => null,
@@ -42,6 +48,7 @@ const complete = jest.fn<(id: string) => Promise<void>>();
 
 beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(useLocalSearchParams).mockReturnValue({});
     todos = [
         makeTodo({}),
         makeTodo({
@@ -119,4 +126,20 @@ test('distinguishes no matches from an empty list and whitespace shows all todos
     expect(screen.getByText(/Searching open todos only/)).toBeTruthy();
     await fireEvent.changeText(screen.getByLabelText('Search todos'), '   ');
     expect(screen.getByText('No open todos')).toBeTruthy();
+});
+
+test('returning from creation clears search and selects Open so the saved todo is available', async () => {
+    const { rerender } = await render(<HomeScreen />);
+    await fireEvent.press(screen.getByRole('tab', { name: 'Completed' }));
+    await fireEvent.changeText(screen.getByLabelText('Search todos'), 'rent');
+    expect(screen.getByText('Pay rent')).toBeTruthy();
+    jest.mocked(useLocalSearchParams).mockReturnValue({ createdTodoId: 'one' });
+    await rerender(<HomeScreen />);
+    expect(
+        screen.getByRole('tab', { name: 'Open' }).props.accessibilityState
+            .selected,
+    ).toBe(true);
+    expect(screen.getByLabelText('Search todos').props.value).toBe('');
+    expect(screen.getByText('Pay electricity')).toBeTruthy();
+    expect(refresh).toHaveBeenCalled();
 });
