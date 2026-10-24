@@ -43,6 +43,7 @@ export function observeTodoNotificationTaps(callbacks: NavigationCallbacks) {
     let pending: { response: Response; id: string; sequence: number } | null =
         null;
     const seen = new Set<string>();
+    const opening = new Set<string>();
 
     function consume(response: Response) {
         try {
@@ -59,6 +60,8 @@ export function observeTodoNotificationTaps(callbacks: NavigationCallbacks) {
     }
 
     async function open(tap: NonNullable<typeof pending>) {
+        const key = responseKey(tap.response);
+        opening.add(key);
         try {
             // getTodoById also waits for database initialization on a cold launch.
             const todo = await getTodoById(tap.id);
@@ -75,6 +78,8 @@ export function observeTodoNotificationTaps(callbacks: NavigationCallbacks) {
             if (stopped || tap.sequence !== sequence) return;
             consume(tap.response);
             callbacks.onError(error);
+        } finally {
+            opening.delete(key);
         }
     }
 
@@ -103,8 +108,13 @@ export function observeTodoNotificationTaps(callbacks: NavigationCallbacks) {
         const id = getTodoId(response);
         if (!id) return;
         const key = responseKey(response);
-        if (seen.has(key)) return;
-        seen.add(key);
+        // Deduplicate a launch response and its live callback while opening.
+        // The same persistent card can be tapped again after navigation finishes.
+        if (
+            opening.has(key) ||
+            (pending && responseKey(pending.response) === key)
+        )
+            return;
         pending = { response, id, sequence: ++sequence };
         logReminderDiagnostic('tap-received', { id, navigationReady: ready });
         flush();

@@ -19,7 +19,8 @@ For Complete and Snooze buttons, see [Notification actions](notification-actions
   handled separately and do not navigate.
 - The todo is read from SQLite when tapped. Existing completed todos still open;
   a missing/deleted todo returns to the list with a short explanation.
-- Duplicate response delivery is handled once. A newer tap supersedes an older
+- Duplicate response delivery is handled once while its navigation is pending.
+  After opening finishes, the retained card can be tapped again. A newer tap supersedes an older
   lookup. Consumed responses are cleared so a reload does not reopen the todo.
 - Ordinary app startup without a response keeps the normal launch behavior.
 - The root list is the navigation anchor for cold links. Navigation uses
@@ -35,7 +36,8 @@ Recheck these internal paths on SDK upgrades.
 ## Emulator checks
 
 1. Open TodoApp, schedule a reminder a few minutes ahead, then tap its popup or
-   notification-shade card. Confirm the correct subject and reminder appear.
+   notification-shade card. Confirm the correct subject and reminder appear,
+   and the card stays in the shade. Go Back, then tap that same card again.
 2. From a fresh list screen, repeat with TodoApp in the background. Tapping the
    card should open the todo; Back should return to the list.
 3. For a cold process test, wait until a reminder is visible in the shade. Press
@@ -48,8 +50,8 @@ Recheck these internal paths on SDK upgrades.
 5. Deliver reminders for two different todos. Open one todo, then tap the
    other's notification. Confirm every form field belongs to the second todo.
 6. Repeat a reminder for the same todo after editing its time. Its new
-   notification should still open it. Only the duplicate event for the same
-   notification is suppressed.
+   notification should still open it. Duplicate callbacks during an outstanding
+   open are suppressed; intentional later taps on a retained card work.
 
 If an old notification survives a deletion race, tapping it should show
 "Todo unavailable" and return to the list. Normal deletion removes its tray

@@ -409,3 +409,76 @@ test('action registration failures preserve basic reminders and offer a retry', 
     expect(getReminderNotice().status).toBe('ready');
     log.mockRestore();
 });
+
+test('reminders stay after opening and remain manually dismissible', async () => {
+    await reconcileTodoReminders([todo()]);
+    const content = mocked.scheduleNotificationAsync.mock.calls[0][0].content;
+    expect(content.autoDismiss).toBe(false);
+    expect(content.sticky).toBe(false);
+});
+
+test('future reminders created before retention was enabled are upgraded without duplicates', async () => {
+    await reconcileTodoReminders([todo()]);
+    const old = pending.get(TODO_REMINDER_PREFIX + 'one')!;
+    const legacyContent = { ...old.content };
+    delete (legacyContent as { autoDismiss?: boolean }).autoDismiss;
+    pending.set(old.identifier, { ...old, content: legacyContent });
+    await reconcileTodoReminders([todo()]);
+    expect(mocked.cancelScheduledNotificationAsync).toHaveBeenCalledWith(
+        old.identifier,
+    );
+    expect(mocked.scheduleNotificationAsync).toHaveBeenCalledTimes(2);
+    expect(pending.size).toBe(1);
+    expect(
+        mocked.scheduleNotificationAsync.mock.calls[1][0].content.autoDismiss,
+    ).toBe(false);
+});
+
+test('opening or renaming an open todo leaves its delivered reminder in the shade', async () => {
+    await reconcileTodoReminders([todo()]);
+    const request = pending.get(TODO_REMINDER_PREFIX + 'one')!;
+    pending.clear();
+    mocked.getPresentedNotificationsAsync.mockResolvedValue([
+        { date: Date.parse(reminderAt), request } as Presented,
+    ]);
+    jest.setSystemTime(new Date('2030-06-15T15:01:00.000Z'));
+    await reconcileTodoReminders([todo()]);
+    await reconcileTodoReminders([todo({ subject: 'Renamed after opening' })]);
+    expect(mocked.dismissNotificationAsync).not.toHaveBeenCalled();
+    expect(mocked.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+});
+
+test.each(['complete', 'snooze', 'delete'] as const)(
+    '%s removes the delivered reminder from the shade',
+    async (action) => {
+        await reconcileTodoReminders([todo()]);
+        const request = pending.get(TODO_REMINDER_PREFIX + 'one')!;
+        pending.clear();
+        mocked.getPresentedNotificationsAsync.mockResolvedValue([
+            { date: Date.parse(reminderAt), request } as Presented,
+        ]);
+        jest.setSystemTime(new Date('2030-06-15T15:01:00.000Z'));
+        const snoozedAt = '2030-06-15T15:11:00.000Z';
+        await reconcileTodoReminders(
+            action === 'delete'
+                ? []
+                : [
+                      todo(
+                          action === 'complete'
+                              ? { status: 'completed' }
+                              : { reminderAt: snoozedAt },
+                      ),
+                  ],
+        );
+        expect(mocked.dismissNotificationAsync).toHaveBeenCalledWith(
+            request.identifier,
+        );
+        expect(pending.size).toBe(action === 'snooze' ? 1 : 0);
+        if (action === 'snooze') {
+            const replacement =
+                mocked.scheduleNotificationAsync.mock.calls.at(-1)![0];
+            expect(replacement.content.autoDismiss).toBe(false);
+            expect(replacement.content.data?.reminderAt).toBe(snoozedAt);
+        }
+    },
+);

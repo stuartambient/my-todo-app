@@ -151,6 +151,10 @@ export async function reconcileTodoReminders(
                 (Date.parse(todo.reminderAt!) <= now ||
                     (item.content.title === todo.subject &&
                         item.content.body === REMINDER_BODY &&
+                        // Native SDK 57 returns this flag, although its output
+                        // TypeScript type omits it. Upgrade future legacy alarms.
+                        'autoDismiss' in item.content &&
+                        item.content.autoDismiss === false &&
                         (actionsReady
                             ? item.content.categoryIdentifier ===
                               REMINDER_CATEGORY
@@ -257,6 +261,10 @@ export async function reconcileTodoReminders(
                         ? REMINDER_CATEGORY
                         : undefined,
                     sound: 'default',
+                    // Opening the todo does not acknowledge the reminder.
+                    // Reconciliation removes it after Complete or Snooze.
+                    autoDismiss: false,
+                    sticky: false,
                     data: {
                         todoId: todo.id,
                         reminderAt: todo.reminderAt,

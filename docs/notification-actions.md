@@ -2,7 +2,8 @@
 
 Saved todo reminders now have **Complete** and **Snooze 10 min** actions. Android
 may hide these until you expand the card in the notification shade. Tapping the
-notification body still opens the todo.
+notification body opens the todo and leaves the reminder in the notification
+shade. Complete and Snooze remove the current card after saving their action.
 
 ## Install once
 
@@ -35,6 +36,15 @@ update do not gain buttons retroactively.
   action responses in the background or after process death. The task is defined
   at module scope in the custom entry before Expo Router registration.
 - Simply receiving a notification or tapping its body never completes or snoozes.
+  Body taps use Android `autoDismiss: false`; users can reopen the same retained
+  card later. Notifications remain swipe-dismissible (`sticky: false`).
+- Completing removes the delivered card; snoozing removes it and schedules a new
+  reminder. An unchanged open todo keeps its card through app resume, opening,
+  saving unchanged fields, and subject edits. Deleting a todo, clearing its
+  reminder, or rescheduling it also removes the outdated card.
+- The retention change only needs a pull and reload of an existing development
+  build. Future pending reminders are upgraded during synchronization; already
+  delivered cards keep their original Android flags. Test with a fresh reminder.
 - An old button cannot change a todo whose reminder was edited to a new time.
   Actions for missing, completed or otherwise stale reminders are ignored.
 - The first action for one delivered notification wins. A transactional SQLite
@@ -59,7 +69,10 @@ Use normal backgrounding or `am kill` for process-death tests, not `am force-sto
 
 ## Device checks
 
-1. Schedule a fresh reminder, return to Android Home, and expand its notification.
+1. Schedule a fresh reminder and tap its body. Confirm the todo opens and its
+   notification stays in the shade. Go Back and tap that same card again; it
+   should reopen the todo. Confirm saving without changing its reminder leaves
+   the card present. Then expand its notification.
    Tap **Complete**. TodoApp should not open. Open it manually and confirm the todo
    is in Completed and no pending reminder remains.
 2. Repeat with a recurring todo and confirm exactly one next occurrence appears.

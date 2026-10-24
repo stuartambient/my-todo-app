@@ -313,3 +313,15 @@ test('a notification action cancels older pending tap navigation', async () => {
     expect(applyTodoReminderAction).toHaveBeenCalledTimes(1);
     observer.stop();
 });
+
+test('a retained reminder can reopen the same todo after its first tap finishes', async () => {
+    const observer = observeTodoNotificationTaps(callbacks);
+    observer.navigationReady();
+    const sameCard = response();
+    emit(sameCard);
+    await settle();
+    emit(sameCard);
+    await settle();
+    expect(callbacks.openTodo).toHaveBeenCalledTimes(2);
+    observer.stop();
+});
