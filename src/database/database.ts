@@ -1,22 +1,25 @@
 import * as SQLite from 'expo-sqlite';
 
-import { INITIAL_SCHEMA, migrateDatabase } from './migrations';
-import { seedDatabase } from './seed';
+import { initializeConnection } from './initializeConnection';
 
 const DATABASE_NAME = 'todo.db';
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 async function openAndInitializeDatabase(): Promise<SQLite.SQLiteDatabase> {
-    const database = await SQLite.openDatabaseAsync(DATABASE_NAME);
-
-    // Foreground and headless notification runtimes can access the same file.
-    await database.execAsync('PRAGMA busy_timeout = 5000;');
-    await database.execAsync(INITIAL_SCHEMA);
-    await migrateDatabase(database);
-    await seedDatabase(database);
-
-    return database;
+    const database = await SQLite.openDatabaseAsync(DATABASE_NAME, {
+        useNewConnection: true,
+    });
+    try {
+        await initializeConnection(database);
+        await database.execAsync('PRAGMA busy_timeout = 5000;');
+        return database;
+    } catch (error) {
+        // This connection belongs to this attempt. A failed initialization must
+        // not leak a handle/transaction or close another runtime's connection.
+        await database.closeAsync().catch(() => undefined);
+        throw error;
+    }
 }
 
 export function getDatabase(): Promise<SQLite.SQLiteDatabase> {

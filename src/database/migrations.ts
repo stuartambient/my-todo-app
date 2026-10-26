@@ -1,9 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const INITIAL_SCHEMA = `
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
-
 CREATE TABLE IF NOT EXISTS todo_types (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL UNIQUE,
@@ -94,38 +91,40 @@ CREATE INDEX IF NOT EXISTS idx_todos_category_id
 `;
 
 /**
- * Upgrade existing installations in place. CREATE TABLE IF NOT EXISTS alone
- * cannot add columns to a database that already exists.
+ * Upgrade existing installations in place. The initializer calls this inside
+ * its BEGIN IMMEDIATE transaction; do not open a nested transaction here.
+ * CREATE TABLE IF NOT EXISTS cannot add columns to existing tables.
  */
-export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
-    await database.withExclusiveTransactionAsync(async (transaction) => {
-        await transaction.execAsync('PRAGMA busy_timeout = 5000;');
-        await transaction.runAsync(
-            'UPDATE todo_notification_sync SET revision = revision + 1 WHERE id = 1',
-        );
-        const columns = await transaction.getAllAsync<{ name: string }>(
-            'PRAGMA table_info(todos)',
-        );
-        const existing = new Set(columns.map((column) => column.name));
-        const additions = [
-            [
-                'recurrence_basis',
-                "TEXT CHECK (recurrence_basis IS NULL OR recurrence_basis IN ('due_date', 'completion_date'))",
-            ],
-            ['recurrence_anchor_date', 'TEXT'],
-            ['recurrence_source_id', 'TEXT'],
-        ] as const;
+export async function migrateDatabase(
+    transaction: SQLiteDatabase,
+): Promise<void> {
+    await transaction.execAsync('PRAGMA busy_timeout = 5000;');
+    await transaction.runAsync(
+        'UPDATE todo_notification_sync SET revision = revision + 1 WHERE id = 1',
+    );
+    const columns = await transaction.getAllAsync<{ name: string }>(
+        'PRAGMA table_info(todos)',
+    );
+    const existing = new Set(columns.map((column) => column.name));
+    const additions = [
+        [
+            'recurrence_basis',
+            "TEXT CHECK (recurrence_basis IS NULL OR recurrence_basis IN ('due_date', 'completion_date'))",
+        ],
+        ['recurrence_anchor_date', 'TEXT'],
+        ['recurrence_source_id', 'TEXT'],
+    ] as const;
 
-        for (const [name, definition] of additions) {
-            if (!existing.has(name)) {
-                // Both values are fixed constants above, never user input.
-                await transaction.execAsync(
-                    `ALTER TABLE todos ADD COLUMN ${name} ${definition};`,
-                );
-            }
+    for (const [name, definition] of additions) {
+        if (!existing.has(name)) {
+            // Both values are fixed constants above, never user input.
+            await transaction.execAsync(
+                `ALTER TABLE todos ADD COLUMN ${name} ${definition};`,
+            );
         }
+    }
 
-        await transaction.execAsync(`
+    await transaction.execAsync(`
             UPDATE todos
             SET recurrence_basis = 'due_date'
             WHERE recurrence_frequency IS NOT NULL AND recurrence_basis IS NULL;
@@ -139,5 +138,4 @@ export async function migrateDatabase(database: SQLiteDatabase): Promise<void> {
                 ON todos(recurrence_source_id)
                 WHERE recurrence_source_id IS NOT NULL;
         `);
-    });
 }
