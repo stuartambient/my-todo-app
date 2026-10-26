@@ -11,10 +11,12 @@ import {
 import { TodoForm } from '@/components/TodoForm';
 import { useCategories } from '@/hooks/useCategories';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
+import { useUnsavedTodoGuard } from '@/hooks/useUnsavedTodoGuard';
 import { createTodo } from '@/repositories/todo.repository';
 import type { TodoFormValues } from '@/schemas/todo.schema';
 
 export default function NewTodoScreen() {
+    const guard = useUnsavedTodoGuard();
     const {
         todoTypes,
         loading: todoTypesLoading,
@@ -32,12 +34,16 @@ export default function NewTodoScreen() {
 
     async function handleSubmit(values: TodoFormValues) {
         try {
-            const todo = await createTodo(values);
-            Keyboard.dismiss();
-            router.dismissTo({
-                pathname: '/',
-                params: { createdTodoId: todo.id },
-            });
+            await guard.perform(
+                () => createTodo(values),
+                (todo) => {
+                    Keyboard.dismiss();
+                    router.dismissTo({
+                        pathname: '/',
+                        params: { createdTodoId: todo.id },
+                    });
+                },
+            );
         } catch (err) {
             console.error('Failed to create todo:', err);
 
@@ -76,6 +82,8 @@ export default function NewTodoScreen() {
                 todoTypes={todoTypes}
                 /* categories={categories} */
                 quickEntry
+                disabled={guard.busy}
+                onDirtyChange={guard.onDirtyChange}
                 submitLabel="Save Todo"
                 onSubmit={handleSubmit}
             />

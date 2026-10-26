@@ -1,7 +1,7 @@
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { format } from 'date-fns';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import {
     KeyboardAvoidingView,
@@ -28,6 +28,8 @@ type TodoFormProps = {
     submitLabel?: string;
     disabled?: boolean;
     quickEntry?: boolean;
+
+    onDirtyChange?: (dirty: boolean) => void;
 
     onSubmit: (values: TodoFormValues) => Promise<void> | void;
 };
@@ -64,6 +66,7 @@ export function TodoForm({
     disabled = false,
     quickEntry = false,
     onSubmit,
+    onDirtyChange,
 }: TodoFormProps) {
     const insets = useSafeAreaInsets();
     const [detailsExpanded, setDetailsExpanded] = useState(!quickEntry);
@@ -73,7 +76,7 @@ export function TodoForm({
         handleSubmit,
         getValues,
         setValue,
-        formState: { errors, isSubmitting },
+        formState: { errors, isSubmitting, isDirty },
     } = useForm<TodoFormValues>({
         resolver: zodResolver(todoSchema),
         defaultValues: initialValues ?? {
@@ -83,6 +86,10 @@ export function TodoForm({
                     ?.id ?? '',
         },
     });
+
+    useEffect(() => {
+        onDirtyChange?.(isDirty);
+    }, [isDirty, onDirtyChange]);
 
     const dueDate = useWatch({ control, name: 'dueDate' });
 
@@ -393,6 +400,7 @@ export function TodoForm({
                                             value === 'normal' &&
                                                 styles.optionButtonSelected,
                                         ]}
+                                        disabled={submitDisabled}
                                         onPress={() => onChange('normal')}
                                     >
                                         <Text
@@ -412,6 +420,7 @@ export function TodoForm({
                                             value === 'high' &&
                                                 styles.optionButtonSelected,
                                         ]}
+                                        disabled={submitDisabled}
                                         onPress={() => onChange('high')}
                                     >
                                         <Text
@@ -511,6 +520,7 @@ export function TodoForm({
                                     <View style={styles.dateContainer}>
                                         <Pressable
                                             style={styles.dateButton}
+                                            disabled={submitDisabled}
                                             onPress={openReminderPicker}
                                         >
                                             <Text
@@ -532,6 +542,7 @@ export function TodoForm({
                                         {value && (
                                             <Pressable
                                                 style={styles.clearDateButton}
+                                                disabled={submitDisabled}
                                                 onPress={() => onChange(null)}
                                             >
                                                 <Text
@@ -571,6 +582,7 @@ export function TodoForm({
                                         return (
                                             <Pressable
                                                 key={label}
+                                                disabled={submitDisabled}
                                                 style={[
                                                     styles.optionButton,
                                                     selected &&

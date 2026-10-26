@@ -353,3 +353,35 @@ test('a date-only todo can be scheduled without opening More options', async () 
         reminderAt: null,
     });
 });
+
+test('dirty tracking ignores opening options and returns clean when edits are reverted', async () => {
+    const changed = jest.fn<(dirty: boolean) => void>();
+    await render(
+        <TodoForm
+            todoTypes={types}
+            quickEntry
+            onSubmit={save}
+            onDirtyChange={changed}
+        />,
+    );
+    expect(changed).toHaveBeenLastCalledWith(false);
+    await fireEvent.press(screen.getByText('More options'));
+    await fireEvent.press(screen.getByText('Hide options'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Todo type' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+    expect(changed).not.toHaveBeenCalledWith(true);
+    await fireEvent.changeText(screen.getByLabelText('Subject'), 'Draft');
+    expect(changed).toHaveBeenLastCalledWith(true);
+    await fireEvent.changeText(screen.getByLabelText('Subject'), '');
+    expect(changed).toHaveBeenLastCalledWith(false);
+    await fireEvent.press(screen.getByText('Add date'));
+    const picker = jest
+        .mocked(DateTimePickerAndroid.open)
+        .mock.calls.at(-1)![0];
+    await act(() => picker.onValueChange!({} as never, new Date(2030, 5, 15)));
+    expect(changed).toHaveBeenLastCalledWith(true);
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Clear due date' }),
+    );
+    expect(changed).toHaveBeenLastCalledWith(false);
+});

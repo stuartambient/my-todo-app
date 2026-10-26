@@ -14,6 +14,7 @@ import { TodoForm } from '@/components/TodoForm';
 import { subscribeTodoChanges } from '@/services/todoChanges';
 import { useCategories } from '@/hooks/useCategories';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
+import { useUnsavedTodoGuard } from '@/hooks/useUnsavedTodoGuard';
 import {
     completeTodo,
     deleteTodo,
@@ -32,6 +33,8 @@ export default function EditTodoScreen() {
 }
 
 function TodoEditor({ id }: { id: string }) {
+    const guard = useUnsavedTodoGuard();
+    const { dirtyRef } = guard;
     const [todo, setTodo] = useState<Todo | null>(null);
     const [loadingTodo, setLoadingTodo] = useState(true);
     const [todoError, setTodoError] = useState<Error | null>(null);
@@ -61,6 +64,9 @@ function TodoEditor({ id }: { id: string }) {
                     return;
                 }
 
+                // Resuming the app or a background notification must not remount
+                // the form over a user's unsaved edits.
+                if (dirtyRef.current) return;
                 if (!result) {
                     setTodoError(new Error('Todo not found.'));
                     return;
@@ -69,7 +75,11 @@ function TodoEditor({ id }: { id: string }) {
                 setTodoError(null);
                 setTodo(result);
             } catch (err) {
-                if (!cancelled && version === requestVersion) {
+                if (
+                    !cancelled &&
+                    version === requestVersion &&
+                    !dirtyRef.current
+                ) {
                     setTodoError(
                         err instanceof Error
                             ? err
@@ -96,7 +106,7 @@ function TodoEditor({ id }: { id: string }) {
             unsubscribe();
             subscription.remove();
         };
-    }, [id]);
+    }, [id, dirtyRef]);
 
     async function handleSubmit(values: TodoFormValues) {
         if (!todo) {
@@ -104,8 +114,10 @@ function TodoEditor({ id }: { id: string }) {
         }
 
         try {
-            await updateTodo(todo.id, values);
-            router.back();
+            await guard.perform(
+                () => updateTodo(todo.id, values),
+                () => router.back(),
+            );
         } catch (err) {
             console.error('Failed to update todo:', err);
 
@@ -122,13 +134,13 @@ function TodoEditor({ id }: { id: string }) {
         }
 
         try {
-            if (todo.status === 'completed') {
-                await reopenTodo(todo.id);
-            } else {
-                await completeTodo(todo.id);
-            }
-
-            router.back();
+            await guard.perform(
+                () =>
+                    todo.status === 'completed'
+                        ? reopenTodo(todo.id)
+                        : completeTodo(todo.id),
+                () => router.back(),
+            );
         } catch (err) {
             console.error('Failed to change todo status:', err);
 
@@ -146,30 +158,35 @@ function TodoEditor({ id }: { id: string }) {
             return;
         }
 
-        Alert.alert('Delete Todo', `Delete "${todo.subject}"?`, [
-            {
-                text: 'Cancel',
-                style: 'cancel',
-            },
-            {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: () => {
-                    void deleteTodo(todo.id)
-                        .then(() => {
-                            router.back();
-                        })
-                        .catch((err) => {
-                            console.error('Failed to delete todo:', err);
-
-                            Alert.alert(
-                                'Unable to delete todo',
-                                'An error occurred while deleting the todo.',
-                            );
-                        });
+        Alert.alert(
+            'Delete Todo',
+            `Delete "${todo.subject}"?${guard.dirtyRef.current ? ' Your unsaved changes will also be discarded.' : ''}`,
+            [
+                {
+                    text: 'Cancel',
+                    style: 'cancel',
                 },
-            },
-        ]);
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: () => {
+                        void guard
+                            .perform(
+                                () => deleteTodo(todo.id),
+                                () => router.back(),
+                            )
+                            .catch((err) => {
+                                console.error('Failed to delete todo:', err);
+
+                                Alert.alert(
+                                    'Unable to delete todo',
+                                    'An error occurred while deleting the todo.',
+                                );
+                            });
+                    },
+                },
+            ],
+        );
     }
 
     const loading = loadingTodo || todoTypesLoading || categoriesLoading;
@@ -218,6 +235,8 @@ function TodoEditor({ id }: { id: string }) {
                     todoTypes={todoTypes}
                     /* categories={categories} */
                     initialValues={initialValues}
+                    disabled={guard.busy}
+                    onDirtyChange={guard.onDirtyChange}
                     submitLabel="Save Changes"
                     onSubmit={handleSubmit}
                 />
@@ -226,7 +245,13 @@ function TodoEditor({ id }: { id: string }) {
             <View style={styles.actions}>
                 <Pressable
                     style={styles.secondaryButton}
-                    onPress={() => void handleToggleCompleted()}
+                    disabled={guard.busy}
+                    onPress={() =>
+                        guard.confirmDiscard(
+                            () => void handleToggleCompleted(),
+                            `${todo.status === 'completed' ? 'Reopening' : 'Completing'} this todo will discard your unsaved changes.`,
+                        )
+                    }
                 >
                     <Text style={styles.secondaryButtonText}>
                         {todo.status === 'completed'
@@ -235,7 +260,11 @@ function TodoEditor({ id }: { id: string }) {
                     </Text>
                 </Pressable>
 
-                <Pressable style={styles.deleteButton} onPress={handleDelete}>
+                <Pressable
+                    style={styles.deleteButton}
+                    disabled={guard.busy}
+                    onPress={handleDelete}
+                >
                     <Text style={styles.deleteButtonText}>Delete Todo</Text>
                 </Pressable>
             </View>

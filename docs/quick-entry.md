@@ -60,7 +60,9 @@ Emulator review:
    Check that Open appears with search cleared and the new todo visible.
 6. Repeat with a longer list and a distant future due date, then with no due
    date. Check that the list reveals the saved row without changing date order.
-7. Back out of New Todo without saving: the previous search/view should remain.
+7. Back out of New Todo without saving: a changed form offers Keep editing or
+   Discard changes; an untouched form leaves immediately. The previous
+   search/view should remain. See unsaved-forms.md for the full review.
 8. Edit an existing todo and verify Save Changes, reminders and repeat behavior.
 
 Native keyboard positioning, transition timing and scrolling on the actual
