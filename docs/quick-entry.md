@@ -1,7 +1,9 @@
 # Quick todo entry
 
-The New Todo screen starts with Subject and the todo type. Type is now a single
-compact selector shared by New and Edit, rather than a row of eight buttons. Task is selected by default (the first active type is a
+The New Todo screen starts with Subject, the todo type and an always-visible
+due date/optional time row. Type is now a single
+compact selector shared by New and Edit, rather than a row of eight buttons.
+Task is selected by default (the first active type is a
 fallback if Task is unavailable), so a subject is sufficient to save. Tapping
 Type opens a scrollable list with the selected option marked. Choosing an option
 updates the draft only. Cancel, tapping outside, and Android Back close the
@@ -11,8 +13,10 @@ outside the scrolling fields, with bottom safe-area padding. On Android the
 app's normal keyboard resize keeps that footer above the keyboard; iOS uses
 KeyboardAvoidingView padding. No native configuration or dependencies changed.
 
-Show details expands priority, due date, reminder, recurrence and notes.
-Hiding details preserves their values. Saving a collapsed form with invalid
+The date row starts empty with Add date, and a date/time remains optional.
+Choosing a date enables Add time beside it. More options expands reminder,
+priority, recurrence and notes; Hide options preserves their values. The due
+date and time remain visible in either state. Saving a collapsed form with invalid
 optional details expands them so validation messages can be seen. Recurring
 todos still require an initial due date. Subject is still limited to 80
 characters, and existing schema validation applies.
@@ -48,10 +52,10 @@ Emulator review:
 1. Pull and reload the existing development build. No native rebuild is needed.
 2. Tap +: check that Subject is first, the keyboard opens and Save Todo remains
    reachable above it. Enter just a subject and save once.
-3. Open Show details, choose a due date/reminder/repeat, add notes, hide details
-   and save. Reopen the todo and check that all details remain.
-4. Select a repeat without a due date, hide details and save. Check the due-date
-   validation message appears after details reopen.
+3. Choose a due date directly, open More options, set a reminder/repeat, add
+   notes, hide options and save. Reopen the todo and check that all details remain.
+4. Select a repeat without a due date, hide options and save. Check the due-date
+   validation message appears with the date row still visible.
 5. From Completed with an active search, create a todo that doesn't match it.
    Check that Open appears with search cleared and the new todo visible.
 6. Repeat with a longer list and a distant future due date, then with no due

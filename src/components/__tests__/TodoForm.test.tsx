@@ -31,7 +31,9 @@ test('quick entry saves a subject with a default type and no optional details', 
         screen.getByRole('button', { name: 'Todo type' }).props
             .accessibilityValue.text,
     ).toBe('Task');
-    expect(screen.queryByText('Due date')).toBeNull();
+    expect(screen.getByText('Due date')).toBeTruthy();
+    expect(screen.getByText('Add date')).toBeTruthy();
+    expect(screen.queryByLabelText('Notes')).toBeNull();
     await fireEvent.changeText(
         screen.getByLabelText('Subject'),
         '  Buy milk  ',
@@ -61,10 +63,10 @@ test('optional details survive collapsing and keep the existing scheduling value
     );
     await fireEvent.press(screen.getByRole('button', { name: 'Todo type' }));
     await fireEvent.press(screen.getByRole('radio', { name: 'Payment' }));
-    await fireEvent.press(screen.getByText('Show details'));
+    await fireEvent.press(screen.getByText('More options'));
     await fireEvent.changeText(screen.getByLabelText('Notes'), 'Keep receipt');
     await fireEvent.press(screen.getByText('High'));
-    await fireEvent.press(screen.getByText('Select date'));
+    await fireEvent.press(screen.getByText('Add date'));
     const datePicker = jest
         .mocked(DateTimePickerAndroid.open)
         .mock.calls.at(-1)![0];
@@ -89,8 +91,9 @@ test('optional details survive collapsing and keep the existing scheduling value
     await act(() =>
         timePicker.onValueChange!({} as never, new Date(2030, 5, 14, 9, 30)),
     );
-    await fireEvent.press(screen.getByText('Hide details'));
+    await fireEvent.press(screen.getByText('Hide options'));
     expect(screen.queryByLabelText('Notes')).toBeNull();
+    expect(screen.getByText('Jun 15, 2030')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
     expect(save.mock.calls[0][0]).toMatchObject({
         typeId: 'payment',
@@ -111,15 +114,15 @@ test('invalid hidden details reopen instead of silently failing to save', async 
         screen.getByLabelText('Subject'),
         'Pay electricity',
     );
-    await fireEvent.press(screen.getByText('Show details'));
+    await fireEvent.press(screen.getByText('More options'));
     await fireEvent.press(screen.getByText('Monthly'));
-    await fireEvent.press(screen.getByText('Hide details'));
+    await fireEvent.press(screen.getByText('Hide options'));
     await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
     expect(save).not.toHaveBeenCalled();
     expect(
         screen.getByText('Choose an initial due date for a repeating todo.'),
     ).toBeTruthy();
-    expect(screen.getByText('Hide details')).toBeTruthy();
+    expect(screen.getByText('Hide options')).toBeTruthy();
 });
 
 test('blank subject remains invalid and keeps quick entry compact', async () => {
@@ -127,7 +130,7 @@ test('blank subject remains invalid and keeps quick entry compact', async () => 
     await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
     expect(save).not.toHaveBeenCalled();
     expect(screen.getByText('Subject is required.')).toBeTruthy();
-    expect(screen.getByText('Show details')).toBeTruthy();
+    expect(screen.getByText('More options')).toBeTruthy();
 });
 
 test('repeated saves stay disabled until the first save finishes', async () => {
@@ -177,7 +180,7 @@ test('editing opens with all existing values and no automatic keyboard', async (
     );
     expect(screen.getByLabelText('Subject').props.autoFocus).toBe(false);
     expect(screen.getByLabelText('Notes').props.value).toBe('Reference 123');
-    expect(screen.queryByText('Show details')).toBeNull();
+    expect(screen.queryByText('More options')).toBeNull();
     await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
     expect(save.mock.calls[0][0]).toEqual(initialValues);
 });
@@ -185,12 +188,11 @@ test('editing opens with all existing values and no automatic keyboard', async (
 test('adding a due time saves local hours and minutes without adding a reminder', async () => {
     await render(<TodoForm todoTypes={types} quickEntry onSubmit={save} />);
     await fireEvent.changeText(screen.getByLabelText('Subject'), 'Appointment');
-    await fireEvent.press(screen.getByText('Show details'));
     expect(
         screen.getByRole('button', { name: 'Choose due time' }).props
             .accessibilityState.disabled,
     ).toBe(true);
-    await fireEvent.press(screen.getByText('Select date'));
+    await fireEvent.press(screen.getByText('Add date'));
     const picker = jest
         .mocked(DateTimePickerAndroid.open)
         .mock.calls.at(-1)![0];
@@ -205,7 +207,7 @@ test('adding a due time saves local hours and minutes without adding a reminder'
     await act(() =>
         timePicker.onValueChange!({} as never, new Date(2030, 5, 15, 15, 5)),
     );
-    await fireEvent.press(screen.getByText('Hide details'));
+    expect(screen.queryByLabelText('Notes')).toBeNull();
     await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
     expect(save.mock.calls[0][0]).toMatchObject({
         dueDate: '2030-06-15',
@@ -328,4 +330,26 @@ test('Task remains the default even if it is not the first available type', asyn
     await fireEvent.changeText(screen.getByLabelText('Subject'), 'A task');
     await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
     expect(save.mock.calls[0][0].typeId).toBe('task');
+});
+
+test('a date-only todo can be scheduled without opening More options', async () => {
+    await render(<TodoForm todoTypes={types} quickEntry onSubmit={save} />);
+    await fireEvent.changeText(
+        screen.getByLabelText('Subject'),
+        'Friday deadline',
+    );
+    expect(screen.queryByText('Priority')).toBeNull();
+    expect(screen.queryByText('Reminder')).toBeNull();
+    await fireEvent.press(screen.getByText('Add date'));
+    const picker = jest
+        .mocked(DateTimePickerAndroid.open)
+        .mock.calls.at(-1)![0];
+    await act(() => picker.onValueChange!({} as never, new Date(2030, 5, 15)));
+    expect(screen.getByText('Jun 15, 2030')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(save.mock.calls[0][0]).toMatchObject({
+        dueDate: '2030-06-15',
+        dueTime: null,
+        reminderAt: null,
+    });
 });

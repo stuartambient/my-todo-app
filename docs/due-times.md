@@ -1,6 +1,7 @@
 # Optional due times
 
-In New Todo, expand Show details. Select a Due date, then use Add time beside it to open the Android time picker.
+New Todo always shows the due date/time row, above More options. Use Add date,
+then Add time beside it to open the Android time picker.
 Date and optional time share one row in both New and Edit, with separate clear
 controls beneath their values.
 Time is optional: selecting a date alone does not fill it. The picker starts at

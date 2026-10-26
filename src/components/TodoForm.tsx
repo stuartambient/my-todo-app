@@ -179,6 +179,186 @@ export function TodoForm({
                     </Text>
                 )}
 
+                <Text style={styles.label}>Due date</Text>
+
+                <View style={styles.scheduleRow}>
+                    <View style={styles.dueDateColumn}>
+                        <Controller
+                            control={control}
+                            name="dueDate"
+                            render={({ field: { value, onChange } }) => {
+                                function getPickerDate(): Date {
+                                    if (!value) {
+                                        return new Date();
+                                    }
+
+                                    return parseStoredDate(value);
+                                }
+
+                                function openDatePicker() {
+                                    DateTimePickerAndroid.open({
+                                        value: getPickerDate(),
+                                        mode: 'date',
+
+                                        onValueChange: (
+                                            _event,
+                                            selectedDate,
+                                        ) => {
+                                            onChange(
+                                                format(
+                                                    selectedDate,
+                                                    'yyyy-MM-dd',
+                                                ),
+                                            );
+                                        },
+                                    });
+                                }
+
+                                return (
+                                    <View style={styles.scheduleField}>
+                                        <Pressable
+                                            style={[
+                                                styles.dateButton,
+                                                styles.scheduleButton,
+                                            ]}
+                                            accessibilityRole="button"
+                                            accessibilityLabel="Choose due date"
+                                            disabled={submitDisabled}
+                                            onPress={openDatePicker}
+                                        >
+                                            <Text
+                                                style={
+                                                    value
+                                                        ? styles.dateText
+                                                        : styles.datePlaceholder
+                                                }
+                                            >
+                                                {value
+                                                    ? format(
+                                                          getPickerDate(),
+                                                          'MMM d, yyyy',
+                                                      )
+                                                    : 'Add date'}
+                                            </Text>
+                                        </Pressable>
+
+                                        {value && (
+                                            <Pressable
+                                                style={
+                                                    styles.clearScheduleButton
+                                                }
+                                                accessibilityRole="button"
+                                                accessibilityLabel="Clear due date"
+                                                disabled={submitDisabled}
+                                                onPress={() => {
+                                                    onChange(null);
+                                                    setValue('dueTime', null, {
+                                                        shouldDirty: true,
+                                                        shouldValidate: true,
+                                                    });
+                                                }}
+                                            >
+                                                <Text
+                                                    style={styles.clearDateText}
+                                                >
+                                                    Clear date
+                                                </Text>
+                                            </Pressable>
+                                        )}
+                                    </View>
+                                );
+                            }}
+                        />
+                    </View>
+                    <View style={styles.dueTimeColumn}>
+                        <Controller
+                            control={control}
+                            name="dueTime"
+                            render={({ field: { value, onChange } }) => {
+                                function openTimePicker() {
+                                    if (!dueDate) return;
+                                    const selected = parseStoredDate(dueDate);
+                                    const [hour, minute] = (value ?? '09:00')
+                                        .split(':')
+                                        .map(Number);
+                                    selected.setHours(hour, minute, 0, 0);
+                                    DateTimePickerAndroid.open({
+                                        value: selected,
+                                        mode: 'time',
+                                        is24Hour: false,
+                                        onValueChange: (_event, time) => {
+                                            onChange(format(time, 'HH:mm'));
+                                        },
+                                    });
+                                }
+
+                                return (
+                                    <View style={styles.scheduleField}>
+                                        <Pressable
+                                            style={[
+                                                styles.dateButton,
+                                                styles.scheduleButton,
+                                                !dueDate &&
+                                                    styles.submitButtonDisabled,
+                                            ]}
+                                            accessibilityRole="button"
+                                            accessibilityLabel="Choose due time"
+                                            accessibilityHint="Optional. Does not set a reminder."
+                                            disabled={
+                                                !dueDate || submitDisabled
+                                            }
+                                            onPress={openTimePicker}
+                                        >
+                                            <Text
+                                                style={
+                                                    value
+                                                        ? styles.dateText
+                                                        : styles.datePlaceholder
+                                                }
+                                            >
+                                                {value
+                                                    ? formatDueTime(value)
+                                                    : 'Add time'}
+                                            </Text>
+                                        </Pressable>
+                                        {value && (
+                                            <Pressable
+                                                style={
+                                                    styles.clearScheduleButton
+                                                }
+                                                accessibilityRole="button"
+                                                accessibilityLabel="Clear due time"
+                                                disabled={submitDisabled}
+                                                onPress={() => onChange(null)}
+                                            >
+                                                <Text
+                                                    style={styles.clearDateText}
+                                                >
+                                                    Clear time
+                                                </Text>
+                                            </Pressable>
+                                        )}
+                                    </View>
+                                );
+                            }}
+                        />
+                    </View>
+                </View>
+                {errors.dueDate && (
+                    <Text style={styles.errorText}>
+                        {errors.dueDate.message}
+                    </Text>
+                )}
+
+                <Text style={styles.helperText}>
+                    Date and time are optional.
+                </Text>
+                {errors.dueTime && (
+                    <Text style={styles.errorText}>
+                        {errors.dueTime.message}
+                    </Text>
+                )}
+
                 {quickEntry && (
                     <Pressable
                         style={styles.detailsButton}
@@ -190,10 +370,10 @@ export function TodoForm({
                         }
                     >
                         <Text style={styles.detailsButtonText}>
-                            {detailsExpanded ? 'Hide details' : 'Show details'}
+                            {detailsExpanded ? 'Hide options' : 'More options'}
                         </Text>
                         <Text style={styles.helperText}>
-                            Date, reminder, repeat, priority and notes
+                            Reminder, priority, repeat and notes
                         </Text>
                     </Pressable>
                 )}
@@ -247,222 +427,6 @@ export function TodoForm({
                                 </View>
                             )}
                         />
-
-                        <Text style={styles.label}>Due date</Text>
-
-                        <View style={styles.scheduleRow}>
-                            <View style={styles.dueDateColumn}>
-                                <Controller
-                                    control={control}
-                                    name="dueDate"
-                                    render={({
-                                        field: { value, onChange },
-                                    }) => {
-                                        function getPickerDate(): Date {
-                                            if (!value) {
-                                                return new Date();
-                                            }
-
-                                            return parseStoredDate(value);
-                                        }
-
-                                        function openDatePicker() {
-                                            DateTimePickerAndroid.open({
-                                                value: getPickerDate(),
-                                                mode: 'date',
-
-                                                onValueChange: (
-                                                    _event,
-                                                    selectedDate,
-                                                ) => {
-                                                    onChange(
-                                                        format(
-                                                            selectedDate,
-                                                            'yyyy-MM-dd',
-                                                        ),
-                                                    );
-                                                },
-                                            });
-                                        }
-
-                                        return (
-                                            <View style={styles.scheduleField}>
-                                                <Pressable
-                                                    style={[
-                                                        styles.dateButton,
-                                                        styles.scheduleButton,
-                                                    ]}
-                                                    accessibilityRole="button"
-                                                    accessibilityLabel="Choose due date"
-                                                    disabled={submitDisabled}
-                                                    onPress={openDatePicker}
-                                                >
-                                                    <Text
-                                                        style={
-                                                            value
-                                                                ? styles.dateText
-                                                                : styles.datePlaceholder
-                                                        }
-                                                    >
-                                                        {value
-                                                            ? format(
-                                                                  getPickerDate(),
-                                                                  'MMM d, yyyy',
-                                                              )
-                                                            : 'Select date'}
-                                                    </Text>
-                                                </Pressable>
-
-                                                {value && (
-                                                    <Pressable
-                                                        style={
-                                                            styles.clearScheduleButton
-                                                        }
-                                                        accessibilityRole="button"
-                                                        accessibilityLabel="Clear due date"
-                                                        disabled={
-                                                            submitDisabled
-                                                        }
-                                                        onPress={() => {
-                                                            onChange(null);
-                                                            setValue(
-                                                                'dueTime',
-                                                                null,
-                                                                {
-                                                                    shouldDirty: true,
-                                                                    shouldValidate: true,
-                                                                },
-                                                            );
-                                                        }}
-                                                    >
-                                                        <Text
-                                                            style={
-                                                                styles.clearDateText
-                                                            }
-                                                        >
-                                                            Clear date
-                                                        </Text>
-                                                    </Pressable>
-                                                )}
-                                            </View>
-                                        );
-                                    }}
-                                />
-                            </View>
-                            <View style={styles.dueTimeColumn}>
-                                <Controller
-                                    control={control}
-                                    name="dueTime"
-                                    render={({
-                                        field: { value, onChange },
-                                    }) => {
-                                        function openTimePicker() {
-                                            if (!dueDate) return;
-                                            const selected =
-                                                parseStoredDate(dueDate);
-                                            const [hour, minute] = (
-                                                value ?? '09:00'
-                                            )
-                                                .split(':')
-                                                .map(Number);
-                                            selected.setHours(
-                                                hour,
-                                                minute,
-                                                0,
-                                                0,
-                                            );
-                                            DateTimePickerAndroid.open({
-                                                value: selected,
-                                                mode: 'time',
-                                                is24Hour: false,
-                                                onValueChange: (
-                                                    _event,
-                                                    time,
-                                                ) => {
-                                                    onChange(
-                                                        format(time, 'HH:mm'),
-                                                    );
-                                                },
-                                            });
-                                        }
-
-                                        return (
-                                            <View style={styles.scheduleField}>
-                                                <Pressable
-                                                    style={[
-                                                        styles.dateButton,
-                                                        styles.scheduleButton,
-                                                        !dueDate &&
-                                                            styles.submitButtonDisabled,
-                                                    ]}
-                                                    accessibilityRole="button"
-                                                    accessibilityLabel="Choose due time"
-                                                    accessibilityHint="Optional. Does not set a reminder."
-                                                    disabled={
-                                                        !dueDate ||
-                                                        submitDisabled
-                                                    }
-                                                    onPress={openTimePicker}
-                                                >
-                                                    <Text
-                                                        style={
-                                                            value
-                                                                ? styles.dateText
-                                                                : styles.datePlaceholder
-                                                        }
-                                                    >
-                                                        {value
-                                                            ? formatDueTime(
-                                                                  value,
-                                                              )
-                                                            : 'Add time'}
-                                                    </Text>
-                                                </Pressable>
-                                                {value && (
-                                                    <Pressable
-                                                        style={
-                                                            styles.clearScheduleButton
-                                                        }
-                                                        accessibilityRole="button"
-                                                        accessibilityLabel="Clear due time"
-                                                        disabled={
-                                                            submitDisabled
-                                                        }
-                                                        onPress={() =>
-                                                            onChange(null)
-                                                        }
-                                                    >
-                                                        <Text
-                                                            style={
-                                                                styles.clearDateText
-                                                            }
-                                                        >
-                                                            Clear time
-                                                        </Text>
-                                                    </Pressable>
-                                                )}
-                                            </View>
-                                        );
-                                    }}
-                                />
-                            </View>
-                        </View>
-                        {errors.dueDate && (
-                            <Text style={styles.errorText}>
-                                {errors.dueDate.message}
-                            </Text>
-                        )}
-
-                        <Text style={styles.helperText}>
-                            {dueDate
-                                ? 'Leave blank for a date-only todo. A due time does not set a reminder.'
-                                : 'Choose a due date to add a time.'}
-                        </Text>
-                        {errors.dueTime && (
-                            <Text style={styles.errorText}>
-                                {errors.dueTime.message}
-                            </Text>
-                        )}
 
                         <Text style={styles.label}>Reminder</Text>
 
