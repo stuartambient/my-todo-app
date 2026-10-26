@@ -28,9 +28,9 @@ test('quick entry saves a subject with a default type and no optional details', 
     await render(<TodoForm todoTypes={types} quickEntry onSubmit={save} />);
     expect(screen.getByLabelText('Subject').props.autoFocus).toBe(true);
     expect(
-        screen.getByRole('radio', { name: 'Task' }).props.accessibilityState
-            .checked,
-    ).toBe(true);
+        screen.getByRole('button', { name: 'Todo type' }).props
+            .accessibilityValue.text,
+    ).toBe('Task');
     expect(screen.queryByText('Due date')).toBeNull();
     await fireEvent.changeText(
         screen.getByLabelText('Subject'),
@@ -59,6 +59,7 @@ test('optional details survive collapsing and keep the existing scheduling value
         screen.getByLabelText('Subject'),
         'Pay electricity',
     );
+    await fireEvent.press(screen.getByRole('button', { name: 'Todo type' }));
     await fireEvent.press(screen.getByRole('radio', { name: 'Payment' }));
     await fireEvent.press(screen.getByText('Show details'));
     await fireEvent.changeText(screen.getByLabelText('Notes'), 'Keep receipt');
@@ -142,6 +143,10 @@ test('repeated saves stay disabled until the first save finishes', async () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Saving...' }));
     expect(save).toHaveBeenCalledTimes(1);
+    expect(
+        screen.getByRole('button', { name: 'Todo type' }).props
+            .accessibilityState.disabled,
+    ).toBe(true);
     await act(() => finish());
     expect(
         screen.getByRole('button', { name: 'Save' }).props.accessibilityState
@@ -241,3 +246,86 @@ test.each(['Clear due time', 'Clear due date'])(
         });
     },
 );
+
+test('all eight types are available from one compact field and selection saves correctly', async () => {
+    const allTypes = [
+        'Task',
+        'Call',
+        'Appointment',
+        'Errand',
+        'Purchase',
+        'Payment',
+        'Follow-up',
+        'Reminder',
+    ].map((name) => ({ id: name.toLowerCase(), name })) as TodoType[];
+    await render(<TodoForm todoTypes={allTypes} quickEntry onSubmit={save} />);
+    await fireEvent.changeText(screen.getByLabelText('Subject'), 'Pay rent');
+    expect(screen.queryAllByRole('radio')).toHaveLength(0);
+    await fireEvent.press(screen.getByRole('button', { name: 'Todo type' }));
+    expect(screen.getAllByRole('radio')).toHaveLength(8);
+    expect(
+        screen.getByRole('radio', { name: 'Task' }).props.accessibilityState
+            .checked,
+    ).toBe(true);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Payment' }));
+    expect(screen.queryAllByRole('radio')).toHaveLength(0);
+    expect(
+        screen.getByRole('button', { name: 'Todo type' }).props
+            .accessibilityValue.text,
+    ).toBe('Payment');
+    expect(save).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(save.mock.calls[0][0]).toMatchObject({
+        subject: 'Pay rent',
+        typeId: 'payment',
+    });
+});
+
+test.each(['Cancel', 'outside', 'Android Back'])(
+    '%s closes type selection without changing the draft',
+    async (method) => {
+        await render(<TodoForm todoTypes={types} quickEntry onSubmit={save} />);
+        await fireEvent.changeText(
+            screen.getByLabelText('Subject'),
+            'My draft',
+        );
+        await fireEvent.press(
+            screen.getByRole('button', { name: 'Todo type' }),
+        );
+        if (method === 'Android Back') {
+            await fireEvent(
+                screen.getByTestId('todo-type-dialog'),
+                'requestClose',
+            );
+        } else {
+            await fireEvent.press(
+                screen.getByRole('button', {
+                    name:
+                        method === 'outside'
+                            ? 'Cancel type selection'
+                            : 'Cancel',
+                }),
+            );
+        }
+        expect(screen.queryAllByRole('radio')).toHaveLength(0);
+        expect(screen.getByLabelText('Subject').props.value).toBe('My draft');
+        expect(
+            screen.getByRole('button', { name: 'Todo type' }).props
+                .accessibilityValue.text,
+        ).toBe('Task');
+        expect(save).not.toHaveBeenCalled();
+    },
+);
+
+test('Task remains the default even if it is not the first available type', async () => {
+    await render(
+        <TodoForm
+            todoTypes={[types[1], types[0]]}
+            quickEntry
+            onSubmit={save}
+        />,
+    );
+    await fireEvent.changeText(screen.getByLabelText('Subject'), 'A task');
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(save.mock.calls[0][0].typeId).toBe('task');
+});

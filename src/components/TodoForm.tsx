@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { todoSchema, type TodoFormValues } from '@/schemas/todo.schema';
 import type { TodoType } from '@/types/todoType';
+import { TodoTypeSelect } from '@/components/TodoTypeSelect';
 import { formatDueTime } from '@/utils/dueTime';
 
 type TodoFormProps = {
@@ -77,7 +78,9 @@ export function TodoForm({
         resolver: zodResolver(todoSchema),
         defaultValues: initialValues ?? {
             ...DEFAULT_VALUES,
-            typeId: todoTypes[0]?.id ?? '',
+            typeId:
+                (todoTypes.find((type) => type.name === 'Task') ?? todoTypes[0])
+                    ?.id ?? '',
         },
     });
 
@@ -159,40 +162,14 @@ export function TodoForm({
                 <Controller
                     control={control}
                     name="typeId"
-                    render={({ field: { value, onChange } }) => (
-                        <View style={styles.optionContainer}>
-                            {todoTypes.map((todoType) => {
-                                const selected = value === todoType.id;
-
-                                return (
-                                    <Pressable
-                                        key={todoType.id}
-                                        style={[
-                                            styles.optionButton,
-                                            selected &&
-                                                styles.optionButtonSelected,
-                                        ]}
-                                        accessibilityRole="radio"
-                                        accessibilityLabel={todoType.name}
-                                        accessibilityState={{
-                                            checked: selected,
-                                        }}
-                                        disabled={submitDisabled}
-                                        onPress={() => onChange(todoType.id)}
-                                    >
-                                        <Text
-                                            style={[
-                                                styles.optionText,
-                                                selected &&
-                                                    styles.optionTextSelected,
-                                            ]}
-                                        >
-                                            {todoType.name}
-                                        </Text>
-                                    </Pressable>
-                                );
-                            })}
-                        </View>
+                    render={({ field: { value, onChange, onBlur } }) => (
+                        <TodoTypeSelect
+                            todoTypes={todoTypes}
+                            value={value}
+                            onChange={onChange}
+                            onBlur={onBlur}
+                            disabled={submitDisabled}
+                        />
                     )}
                 />
 

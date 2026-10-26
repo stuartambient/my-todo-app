@@ -1,7 +1,11 @@
 # Quick todo entry
 
-The New Todo screen starts with Subject and the todo type. The first available
-active type (normally Task) is selected, so a subject is sufficient to save.
+The New Todo screen starts with Subject and the todo type. Type is now a single
+compact selector shared by New and Edit, rather than a row of eight buttons. Task is selected by default (the first active type is a
+fallback if Task is unavailable), so a subject is sufficient to save. Tapping
+Type opens a scrollable list with the selected option marked. Choosing an option
+updates the draft only. Cancel, tapping outside, and Android Back close the
+selector without changing it. Existing edit values remain selected.
 Subject receives keyboard focus automatically. Save Todo stays in a footer
 outside the scrolling fields, with bottom safe-area padding. On Android the
 app's normal keyboard resize keeps that footer above the keyboard; iOS uses
@@ -57,3 +61,9 @@ Emulator review:
 
 Native keyboard positioning, transition timing and scrolling on the actual
 emulator require device review; Jest does not exercise those native layouts.
+
+
+For the compact Type selector, also check that all eight types are available,
+selecting a different type updates its field, canceling preserves the draft,
+and reopening a saved todo shows the correct type. Review larger system text
+and the scrollable choice list on a smaller phone. No native rebuild is needed.
