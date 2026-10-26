@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -13,7 +13,14 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { createBackup, restoreBackup } from '@/repositories/backup.repository';
-import { pickBackupFile, saveBackupFile } from '@/services/backupFiles';
+import {
+    backupFolderLabel,
+    BackupDestinationError,
+    chooseBackupFolder,
+    getBackupFolder,
+    pickBackupFile,
+    saveBackupFile,
+} from '@/services/backupFiles';
 import type { TodoBackup } from '@/services/todoBackupFormat';
 
 type Selection = { name: string; backup: TodoBackup };
@@ -23,6 +30,36 @@ export default function BackupScreen() {
     const [busy, setBusy] = useState(false);
     const [message, setMessage] = useState('');
     const busyRef = useRef(false);
+    const mounted = useRef(true);
+    const folderRequest = useRef(0);
+    const [folder, setFolder] = useState<string | null>(null);
+    const [folderReady, setFolderReady] = useState(false);
+    const [folderError, setFolderError] = useState(false);
+    const loadFolder = useCallback(() => {
+        const request = ++folderRequest.current;
+        return getBackupFolder()
+            .then((saved) => {
+                if (mounted.current && request === folderRequest.current) {
+                    setFolder(saved);
+                    setFolderError(false);
+                }
+            })
+            .catch(() => {
+                if (mounted.current && request === folderRequest.current)
+                    setFolderError(true);
+            })
+            .finally(() => {
+                if (mounted.current && request === folderRequest.current)
+                    setFolderReady(true);
+            });
+    }, []);
+    useEffect(() => {
+        mounted.current = true;
+        void loadFolder();
+        return () => {
+            mounted.current = false;
+        };
+    }, [loadFolder]);
     const insets = useSafeAreaInsets();
     usePreventRemove(busy, () => {});
 
@@ -34,14 +71,34 @@ export default function BackupScreen() {
         try {
             await operation();
         } catch (error) {
+            if (error instanceof BackupDestinationError) {
+                Alert.alert('Unable to save backup', error.message, [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Choose folder',
+                        onPress: () =>
+                            void run(async () => {
+                                if (await chooseBackupFolder())
+                                    await saveCurrentBackup();
+                            }),
+                    },
+                ]);
+                return;
+            }
             Alert.alert(
                 'Unable to finish',
                 error instanceof Error ? error.message : 'Please try again.',
             );
         } finally {
+            await loadFolder();
             busyRef.current = false;
             setBusy(false);
         }
+    }
+
+    async function saveCurrentBackup() {
+        const name = await saveBackupFile(await createBackup());
+        if (name) setMessage(`Backup saved: ${name}`);
     }
 
     function confirmRestore() {
@@ -90,24 +147,77 @@ export default function BackupScreen() {
                 computer or cloud storage to keep it safe if your phone is lost.
                 Backups are plain text and include your notes.
             </Text>
+            {!folderReady ? (
+                <Text style={styles.hint}>Loading backup folder…</Text>
+            ) : folderError ? (
+                <>
+                    <Text style={styles.hint}>
+                        Unable to load your backup folder. Please try again.
+                    </Text>
+                    <Pressable
+                        accessibilityRole="button"
+                        disabled={busy}
+                        style={styles.cancelButton}
+                        onPress={() => {
+                            setFolderReady(false);
+                            void loadFolder();
+                        }}
+                    >
+                        <Text style={styles.secondaryText}>
+                            Retry loading folder
+                        </Text>
+                    </Pressable>
+                </>
+            ) : folder ? (
+                <>
+                    <Text style={styles.hint}>
+                        Backup folder: {backupFolderLabel(folder)}
+                    </Text>
+                    <Text style={styles.hint}>
+                        Tap Save backup to create a new backup in this folder.
+                    </Text>
+                    <Pressable
+                        accessibilityRole="button"
+                        disabled={busy}
+                        accessibilityState={{ disabled: busy }}
+                        style={styles.cancelButton}
+                        onPress={() =>
+                            void run(async () => {
+                                if (await chooseBackupFolder())
+                                    setMessage(
+                                        'Backup folder changed. Your existing backup files stay where they are.',
+                                    );
+                            })
+                        }
+                    >
+                        <Text style={styles.secondaryText}>
+                            Change backup folder
+                        </Text>
+                    </Pressable>
+                </>
+            ) : (
+                <Text style={styles.hint}>
+                    For your first backup, choose or create a folder named
+                    “TodoApp Backups”, then tap “Use this folder” and allow
+                    access. If Android says “Can’t use this folder”, create a
+                    new folder and open it. TodoApp will remember your choice
+                    for later backups.
+                </Text>
+            )}
             <Pressable
                 accessibilityRole="button"
-                disabled={busy}
-                accessibilityState={{ disabled: busy }}
-                style={[styles.button, busy && styles.disabled]}
-                onPress={() =>
-                    void run(async () => {
-                        const name = await saveBackupFile(await createBackup());
-                        if (name) setMessage(`Backup saved: ${name}`);
-                    })
-                }
+                disabled={busy || !folderReady || folderError}
+                accessibilityState={{
+                    disabled: busy || !folderReady || folderError,
+                }}
+                style={[
+                    styles.button,
+                    (busy || !folderReady || folderError) && styles.disabled,
+                ]}
+                onPress={() => void run(saveCurrentBackup)}
             >
                 <Text style={styles.buttonText}>Save backup</Text>
             </Pressable>
-            <Text style={styles.hint}>
-                Choose or create a folder in the Android file picker, then tap
-                “Use this folder”.
-            </Text>
 
             <View style={styles.section}>
                 <Text style={styles.heading} accessibilityRole="header">
