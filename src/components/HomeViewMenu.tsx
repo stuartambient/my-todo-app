@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import {
     Keyboard,
@@ -57,6 +58,18 @@ export function HomeViewMenu({ onViewCompleted }: Props) {
                             }}
                         >
                             <Text style={styles.menuText}>View completed</Text>
+                        </Pressable>
+                        <Pressable
+                            style={styles.menuItem}
+                            accessibilityRole="button"
+                            onPress={() => {
+                                close();
+                                router.push('/backup');
+                            }}
+                        >
+                            <Text style={styles.menuText}>
+                                Backup &amp; restore
+                            </Text>
                         </Pressable>
                     </View>
                 </View>

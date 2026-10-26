@@ -21,13 +21,13 @@ export type UpdateTodoInput = CreateTodoInput;
 // Serialize repository writes so rapid taps cannot start competing transactions.
 let writeQueue: Promise<unknown> = Promise.resolve();
 
-function enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
+export function enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
     const result = writeQueue.then(operation);
     writeQueue = result.catch(() => undefined);
     return result;
 }
 
-async function synchronizeSavedReminders(
+export async function synchronizeSavedReminders(
     requestPermission = false,
     rescheduleFuture = false,
 ): Promise<void> {

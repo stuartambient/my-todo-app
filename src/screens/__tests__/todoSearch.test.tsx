@@ -8,7 +8,7 @@ import { useTodos } from '@/hooks/useTodos';
 import type { Todo, TodoStatus } from '@/types/todo';
 
 jest.mock('expo-router', () => ({
-    router: { navigate: jest.fn(), setParams: jest.fn() },
+    router: { navigate: jest.fn(), setParams: jest.fn(), push: jest.fn() },
     useLocalSearchParams: jest.fn(() => ({})),
     useIsFocused: () => true,
     Stack: {
@@ -45,8 +45,9 @@ jest.mock('react-native-safe-area-context', () => ({
 jest.mock('@/components/ReminderNotice', () => ({
     ReminderNotice: () => null,
 }));
+const mockRefreshTypes = jest.fn();
 jest.mock('@/hooks/useTodoTypes', () => ({
-    useTodoTypes: () => ({ todoTypes: [] }),
+    useTodoTypes: () => ({ todoTypes: [], refresh: mockRefreshTypes }),
 }));
 jest.mock('@/hooks/useTodos', () => ({ useTodos: jest.fn() }));
 

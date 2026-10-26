@@ -72,7 +72,7 @@ export default function HomeScreen() {
     const openingScreen = useRef(false);
 
     const { todos, loading, error, refresh, complete } = useTodos(status);
-    const { todoTypes } = useTodoTypes();
+    const { todoTypes, refresh: refreshTypes } = useTodoTypes();
 
     const showingCompleted = status === 'completed';
     const searchTerm = search.trim().toLowerCase();
@@ -155,7 +155,8 @@ export default function HomeScreen() {
                 setSearch('');
             }
             void refresh();
-        }, [refresh, createdTodoId]),
+            void refreshTypes();
+        }, [refresh, refreshTypes, createdTodoId]),
     );
 
     useFocusEffect(
