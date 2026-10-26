@@ -1,7 +1,8 @@
-import { beforeEach, expect, jest, test } from '@jest/globals';
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { afterEach, beforeEach, expect, jest, test } from '@jest/globals';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 import { useLocalSearchParams } from 'expo-router';
+import { BackHandler } from 'react-native';
 import HomeScreen from '@/app/index';
 import { useTodos } from '@/hooks/useTodos';
 import type { Todo, TodoStatus } from '@/types/todo';
@@ -10,11 +11,36 @@ jest.mock('expo-router', () => ({
     router: { navigate: jest.fn(), setParams: jest.fn() },
     useLocalSearchParams: jest.fn(() => ({})),
     useIsFocused: () => true,
-    Stack: { Screen: () => null },
+    Stack: {
+        Screen: ({
+            options,
+        }: {
+            options: {
+                title: string;
+                headerLeft?: () => import('react').ReactNode;
+                headerRight?: () => import('react').ReactNode;
+            };
+        }) => {
+            const { View, Text } =
+                jest.requireActual<typeof import('react-native')>(
+                    'react-native',
+                );
+            return (
+                <View>
+                    <Text>{options.title}</Text>
+                    {options.headerLeft?.()}
+                    {options.headerRight?.()}
+                </View>
+            );
+        },
+    },
     useFocusEffect: (callback: () => void) => {
         const React = jest.requireActual<typeof import('react')>('react');
         React.useEffect(callback, [callback]);
     },
+}));
+jest.mock('react-native-safe-area-context', () => ({
+    useSafeAreaInsets: () => ({ top: 24, bottom: 24, left: 0, right: 0 }),
 }));
 jest.mock('@/components/ReminderNotice', () => ({
     ReminderNotice: () => null,
@@ -93,11 +119,11 @@ test('searches subjects and notes without case sensitivity, preserving date head
     expect(complete).not.toHaveBeenCalled();
 });
 
-test('keeps the query when switching tabs and clearing restores the selected list', async () => {
+test('keeps the query when viewing completed and clearing restores the current list', async () => {
     await render(<HomeScreen />);
     await fireEvent.changeText(screen.getByLabelText('Search todos'), 'rent');
     expect(screen.getByText('No matching todos')).toBeTruthy();
-    await fireEvent.press(screen.getByRole('tab', { name: 'Completed' }));
+    await viewCompleted();
     expect(screen.getByText('Pay rent')).toBeTruthy();
     expect(screen.getByLabelText('Search todos').props.value).toBe('rent');
     await fireEvent.press(screen.getByRole('button', { name: 'Clear search' }));
@@ -131,15 +157,15 @@ test('distinguishes no matches from an empty list and whitespace shows all todos
 
 test('returning from creation clears search and selects Open so the saved todo is available', async () => {
     const { rerender } = await render(<HomeScreen />);
-    await fireEvent.press(screen.getByRole('tab', { name: 'Completed' }));
+    await viewCompleted();
     await fireEvent.changeText(screen.getByLabelText('Search todos'), 'rent');
     expect(screen.getByText('Pay rent')).toBeTruthy();
     jest.mocked(useLocalSearchParams).mockReturnValue({ createdTodoId: 'one' });
     await rerender(<HomeScreen />);
+    expect(screen.getByText('Todos')).toBeTruthy();
     expect(
-        screen.getByRole('tab', { name: 'Open' }).props.accessibilityState
-            .selected,
-    ).toBe(true);
+        screen.queryByRole('button', { name: 'Back to open todos' }),
+    ).toBeNull();
     expect(screen.getByLabelText('Search todos').props.value).toBe('');
     expect(screen.getByText('Pay electricity')).toBeTruthy();
     expect(refresh).toHaveBeenCalled();
@@ -157,10 +183,82 @@ test('shows local due times in both Open and Completed while keeping the date he
     expect(
         screen.getByRole('header', { name: /2030/ }).props.children,
     ).toContain('2030');
-    await fireEvent.press(screen.getByRole('tab', { name: 'Completed' }));
+    await viewCompleted();
     const midnight = new Date(2000, 0, 1).toLocaleTimeString(undefined, {
         hour: 'numeric',
         minute: '2-digit',
     });
     expect(screen.getByText(`Todo · 2030-06-15 · ${midnight}`)).toBeTruthy();
+});
+
+async function viewCompleted() {
+    await fireEvent.press(screen.getByRole('button', { name: 'Todo options' }));
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'View completed' }),
+    );
+}
+
+afterEach(() => {
+    jest.restoreAllMocks();
+});
+
+test('Open is the default without tabs, and the menu leads to Completed and back', async () => {
+    await render(<HomeScreen />);
+    expect(screen.getByText('Todos')).toBeTruthy();
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    expect(screen.queryByText('View completed')).toBeNull();
+    expect(screen.getByText('Pay electricity')).toBeTruthy();
+    await viewCompleted();
+    expect(screen.getByText('Completed')).toBeTruthy();
+    expect(screen.getByText('Pay rent')).toBeTruthy();
+    expect(screen.queryByText('Pay electricity')).toBeNull();
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Back to open todos' }),
+    );
+    expect(screen.getByText('Todos')).toBeTruthy();
+    expect(screen.getByText('Pay electricity')).toBeTruthy();
+});
+
+test('closing the options menu leaves the current list and search unchanged', async () => {
+    await render(<HomeScreen />);
+    await fireEvent.changeText(
+        screen.getByLabelText('Search todos'),
+        'electric',
+    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Todo options' }));
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Close todo options' }),
+    );
+    expect(screen.queryByText('View completed')).toBeNull();
+    expect(screen.getByLabelText('Search todos').props.value).toBe('electric');
+    expect(screen.getByText('Pay electricity')).toBeTruthy();
+});
+
+test('Android Back leaves Completed for Open and preserves the search', async () => {
+    let goBack: Parameters<typeof BackHandler.addEventListener>[1] | undefined;
+    const remove = jest.fn();
+    jest.spyOn(BackHandler, 'addEventListener').mockImplementation(
+        (_event, handler) => {
+            goBack = handler;
+            return { remove };
+        },
+    );
+    await render(<HomeScreen />);
+    await fireEvent.changeText(screen.getByLabelText('Search todos'), 'pay');
+    await viewCompleted();
+    expect(goBack).toBeDefined();
+    await act(() => {
+        expect(goBack!({} as never)).toBe(true);
+    });
+    expect(screen.getByText('Todos')).toBeTruthy();
+    expect(screen.getByLabelText('Search todos').props.value).toBe('pay');
+    expect(remove).toHaveBeenCalled();
+});
+
+test('countdowns explain Due in while overdue labels stay unambiguous', async () => {
+    todos[1].dueDate = '2010-01-01';
+    await render(<HomeScreen />);
+    expect(screen.getByText(/^Due in /)).toBeTruthy();
+    expect(screen.getByText('Overdue')).toBeTruthy();
+    expect(screen.queryByText('Due in Overdue')).toBeNull();
 });

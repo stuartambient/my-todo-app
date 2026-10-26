@@ -24,7 +24,7 @@ scrolls to that row in its normal date group (or No due date). SectionList
 retries unmeasured locations after moving near them; retries stop when the row
 is visible, the screen loses focus or the hook unmounts. Date ordering is kept.
 The saved id is consumed after the row becomes visible, so later visits don't
-keep jumping back to it. Back without saving retains the previous tab/search.
+keep jumping back to it. Back without saving retains the previous view/search.
 
 ## Verification
 
@@ -52,7 +52,7 @@ Emulator review:
    Check that Open appears with search cleared and the new todo visible.
 6. Repeat with a longer list and a distant future due date, then with no due
    date. Check that the list reveals the saved row without changing date order.
-7. Back out of New Todo without saving: the previous search/tab should remain.
+7. Back out of New Todo without saving: the previous search/view should remain.
 8. Edit an existing todo and verify Save Changes, reminders and repeat behavior.
 
 Native keyboard positioning, transition timing and scrolling on the actual

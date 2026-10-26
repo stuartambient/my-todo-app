@@ -10,6 +10,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    BackHandler,
     SectionList,
     Pressable,
     StyleSheet,
@@ -18,6 +19,7 @@ import {
     View,
 } from 'react-native';
 
+import { HomeViewMenu } from '@/components/HomeViewMenu';
 import { ReminderNotice } from '@/components/ReminderNotice';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
 import { useTodos } from '@/hooks/useTodos';
@@ -156,6 +158,20 @@ export default function HomeScreen() {
         }, [refresh, createdTodoId]),
     );
 
+    useFocusEffect(
+        useCallback(() => {
+            if (!showingCompleted) return;
+            const subscription = BackHandler.addEventListener(
+                'hardwareBackPress',
+                () => {
+                    setStatus('open');
+                    return true;
+                },
+            );
+            return () => subscription.remove();
+        }, [showingCompleted]),
+    );
+
     const todoTypeNames = useMemo(
         () =>
             new Map(todoTypes.map((todoType) => [todoType.id, todoType.name])),
@@ -255,7 +271,9 @@ export default function HomeScreen() {
                                     styles.dueTimeOverdue,
                             ]}
                         >
-                            {dueTime.label}
+                            {dueTime.status === 'overdue'
+                                ? dueTime.label
+                                : `Due in ${dueTime.label}`}
                         </Text>
                     )}
                 </Pressable>
@@ -267,57 +285,30 @@ export default function HomeScreen() {
         <View style={styles.screen}>
             <Stack.Screen
                 options={{
-                    title: 'Todos',
+                    title: showingCompleted ? 'Completed' : 'Todos',
+                    headerRight: showingCompleted
+                        ? undefined
+                        : () => (
+                              <HomeViewMenu
+                                  onViewCompleted={() => setStatus('completed')}
+                              />
+                          ),
+                    headerLeft: showingCompleted
+                        ? () => (
+                              <Pressable
+                                  style={styles.backToOpenButton}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Back to open todos"
+                                  onPress={() => setStatus('open')}
+                              >
+                                  <Text style={styles.backToOpenText}>
+                                      ‹ Open
+                                  </Text>
+                              </Pressable>
+                          )
+                        : undefined,
                 }}
             />
-
-            <View style={styles.filterContainer}>
-                <View style={styles.filterBar}>
-                    <Pressable
-                        style={[
-                            styles.filterButton,
-                            !showingCompleted && styles.filterButtonActive,
-                        ]}
-                        accessibilityRole="tab"
-                        accessibilityState={{
-                            selected: !showingCompleted,
-                        }}
-                        onPress={() => setStatus('open')}
-                    >
-                        <Text
-                            style={[
-                                styles.filterButtonText,
-                                !showingCompleted &&
-                                    styles.filterButtonTextActive,
-                            ]}
-                        >
-                            Open
-                        </Text>
-                    </Pressable>
-
-                    <Pressable
-                        style={[
-                            styles.filterButton,
-                            showingCompleted && styles.filterButtonActive,
-                        ]}
-                        accessibilityRole="tab"
-                        accessibilityState={{
-                            selected: showingCompleted,
-                        }}
-                        onPress={() => setStatus('completed')}
-                    >
-                        <Text
-                            style={[
-                                styles.filterButtonText,
-                                showingCompleted &&
-                                    styles.filterButtonTextActive,
-                            ]}
-                        >
-                            Completed
-                        </Text>
-                    </Pressable>
-                </View>
-            </View>
 
             <View style={styles.searchContainer}>
                 <TextInput
@@ -331,7 +322,7 @@ export default function HomeScreen() {
                     }
                     placeholderTextColor="#777777"
                     accessibilityLabel="Search todos"
-                    accessibilityHint="Search subjects and notes in the selected tab"
+                    accessibilityHint="Search subjects and notes in the current list"
                     autoCapitalize="none"
                     autoCorrect={false}
                     returnKeyType="search"
@@ -349,7 +340,7 @@ export default function HomeScreen() {
                 )}
             </View>
 
-            <View style={styles.notificationTestContainer}>
+            <View style={styles.reminderNoticeContainer}>
                 <ReminderNotice />
             </View>
 
@@ -434,10 +425,16 @@ const styles = StyleSheet.create({
         backgroundColor: '#ffffff',
     },
 
-    filterContainer: {
-        paddingHorizontal: 16,
-        paddingTop: 16,
-        paddingBottom: 4,
+    backToOpenButton: {
+        minHeight: 44,
+        justifyContent: 'center',
+        paddingRight: 16,
+    },
+
+    backToOpenText: {
+        color: '#333333',
+        fontSize: 17,
+        fontWeight: '600',
     },
 
     searchContainer: {
@@ -474,40 +471,13 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
 
-    notificationTestContainer: {
+    reminderNoticeContainer: {
         paddingHorizontal: 16,
     },
 
-    filterBar: {
-        flexDirection: 'row',
-        padding: 4,
-        borderRadius: 10,
-        backgroundColor: '#eeeeee',
-    },
-
-    filterButton: {
-        flex: 1,
-        alignItems: 'center',
-        paddingVertical: 10,
-        borderRadius: 7,
-    },
-
-    filterButtonActive: {
-        backgroundColor: '#222222',
-    },
-
-    filterButtonText: {
-        color: '#555555',
-        fontSize: 15,
-        fontWeight: '600',
-    },
-
-    filterButtonTextActive: {
-        color: '#ffffff',
-    },
-
     list: {
-        padding: 16,
+        paddingHorizontal: 16,
+        paddingTop: 4,
         paddingBottom: 100,
     },
 
@@ -550,7 +520,7 @@ const styles = StyleSheet.create({
         marginTop: 20,
         paddingBottom: 8,
         borderBottomWidth: 1,
-        borderBottomColor: '#999999',
+        borderBottomColor: '#dddddd',
         color: '#222222',
         fontSize: 18,
         fontWeight: '700',
