@@ -15,5 +15,6 @@ android {
 }
 
 dependencies {
-  implementation project(':expo-notifications')
+  // SDK 57 may link Expo modules as prebuilt artifacts rather than projects.
+  implementation expoModule.getExpoDependency('expo-notifications')
 }

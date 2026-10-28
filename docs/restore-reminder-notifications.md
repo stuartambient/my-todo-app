@@ -27,6 +27,8 @@ Evidence contains only todo ID, reminder timestamp, and delivery timestamp in pr
 
 Restored cards force silent list-only behavior natively, including if the user backgrounds the app during recovery. The foreground handler also honors the `reminderRestored` flag. Normal future reminders retain their existing audible behavior.
 
+The Gradle dependency uses `expoModule.getExpoDependency('expo-notifications')`, which selects the configured prebuilt artifact or source project. A direct `project(':expo-notifications')` reference fails when SDK 57 links the module as a prebuilt artifact.
+
 This is intentionally tied to the installed SDK 57 native extension points and model APIs; review the receiver/delegate integration when upgrading Expo. There is no NotificationListenerService, broad notification-access permission, or access to other apps' notifications.
 
 ## Restore synchronization and failures
