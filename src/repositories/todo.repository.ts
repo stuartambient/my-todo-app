@@ -13,6 +13,7 @@ import {
 } from '@/services/todoReminders';
 import { getNextOccurrenceDate, shiftReminder } from '@/utils/recurrence';
 import { notifyTodoChanged } from '@/services/todoChanges';
+import { maintainDeliveryHistory } from '@/services/reminderDeliveryHistory';
 import { SNOOZE_MINUTES } from '@/services/reminderNotificationConstants';
 
 export type CreateTodoInput = TodoFormValues;
@@ -60,6 +61,7 @@ export async function synchronizeSavedReminders(
                 status: row.status,
                 reminderAt: row.reminder_at,
             }));
+            await maintainDeliveryHistory(todos);
             await reconcileTodoReminders(
                 todos,
                 false,

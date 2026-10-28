@@ -20,8 +20,31 @@ export type ReminderTodo = Pick<
     Todo,
     'id' | 'subject' | 'status' | 'reminderAt'
 >;
-const CHANNEL_ID = 'todoapp-reminders';
+export const REMINDER_CHANNEL_ID = 'todoapp-reminders';
+const CHANNEL_ID = REMINDER_CHANNEL_ID;
 const REMINDER_BODY = 'Your todo reminder is due.';
+
+export function buildReminderContent(
+    todo: ReminderTodo,
+    timing: 'exact' | 'approximate' | 'restored',
+    actionsReady = true,
+) {
+    return {
+        title: todo.subject,
+        body: REMINDER_BODY,
+        categoryIdentifier: actionsReady ? REMINDER_CATEGORY : undefined,
+        sound: timing === 'restored' ? (false as const) : 'default',
+        autoDismiss: false,
+        sticky: false,
+        data: {
+            todoId: todo.id,
+            reminderAt: todo.reminderAt,
+            reminderVersion: 1,
+            reminderTiming: timing,
+            ...(timing === 'restored' ? { reminderRestored: true } : {}),
+        },
+    };
+}
 
 type ReminderNotice =
     | { status: 'ready' | 'unsupported' }
@@ -254,24 +277,7 @@ export async function reconcileTodoReminders(
 
             await Notifications.scheduleNotificationAsync({
                 identifier,
-                content: {
-                    title: todo.subject,
-                    body: REMINDER_BODY,
-                    categoryIdentifier: actionsReady
-                        ? REMINDER_CATEGORY
-                        : undefined,
-                    sound: 'default',
-                    // Opening the todo does not acknowledge the reminder.
-                    // Reconciliation removes it after Complete or Snooze.
-                    autoDismiss: false,
-                    sticky: false,
-                    data: {
-                        todoId: todo.id,
-                        reminderAt: todo.reminderAt,
-                        reminderVersion: 1,
-                        reminderTiming: timing,
-                    },
-                },
+                content: buildReminderContent(todo, timing, actionsReady),
                 trigger: {
                     type: Notifications.SchedulableTriggerInputTypes.DATE,
                     date,

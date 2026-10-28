@@ -1,1 +1,11 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <receiver android:name="expo.modules.todoexactalarms.TodoNotificationService" android:enabled="true" android:exported="false">
+      <!-- Expo resolves the highest-priority receiver for its internal event.
+           Its original receiver still handles boot/package events. -->
+      <intent-filter android:priority="10">
+        <action android:name="expo.modules.notifications.NOTIFICATION_EVENT" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

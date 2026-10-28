@@ -58,6 +58,8 @@ Module._load = function (request, parent, main) {
     if (request === 'expo-crypto') return { randomUUID };
     if (request === 'expo-sqlite')
         return { openDatabaseAsync: async () => database };
+    if (request === '@/services/reminderDeliveryHistory')
+        return { maintainDeliveryHistory: async () => {} };
     if (request === '@/services/todoReminders')
         return {
             reconcileTodoReminders: async (todos) => {

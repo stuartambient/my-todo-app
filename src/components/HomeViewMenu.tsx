@@ -64,6 +64,18 @@ export function HomeViewMenu({ onViewCompleted }: Props) {
                             accessibilityRole="button"
                             onPress={() => {
                                 close();
+                                router.push('/restore-reminders');
+                            }}
+                        >
+                            <Text style={styles.menuText}>
+                                Restore reminder notifications
+                            </Text>
+                        </Pressable>
+                        <Pressable
+                            style={styles.menuItem}
+                            accessibilityRole="button"
+                            onPress={() => {
+                                close();
                                 router.push('/backup');
                             }}
                         >

@@ -12,10 +12,12 @@ export function configureNotificationHandler(): void {
                 id: notification.request.identifier,
                 reminderAt: notification.request.content.data?.reminderAt,
             });
+            const restored =
+                notification.request.content.data?.reminderRestored === true;
             return {
-                shouldShowBanner: true,
+                shouldShowBanner: !restored,
                 shouldShowList: true,
-                shouldPlaySound: true,
+                shouldPlaySound: !restored,
                 shouldSetBadge: false,
             };
         },

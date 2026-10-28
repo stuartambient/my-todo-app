@@ -29,6 +29,15 @@ class TodoExactAlarmsModule : Module() {
       canScheduleExactAlarms()
     }
 
+    AsyncFunction("getDeliveredRemindersAsync") {
+      TodoPresentationDelegate(context).capturePresented()
+      ReminderDeliveryStore.read(context)
+    }
+
+    AsyncFunction("retainDeliveredRemindersAsync") { keys: List<String> ->
+      ReminderDeliveryStore.retain(context, keys)
+    }
+
     // Resolves after opening Settings. AppState checks access again on return.
     AsyncFunction("openSettingsAsync") {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !canScheduleExactAlarms()) {
