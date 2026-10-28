@@ -1,56 +1,48 @@
-# Welcome to your Expo app 👋
+# TodoApp
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Android todo app built with Expo SDK 57, React Native, Expo Router, and SQLite. Supports dated lists, optional due times, independent local reminders, repeating todos, search, completed history, and manual backup/restore.
 
-## Get started
+## Development
 
-1. Install dependencies
+Install dependencies, then build the development app on a connected phone or emulator:
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```powershell
+npm.cmd install
+npx.cmd expo run:android --device
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+After installing the development build, start Metro for JavaScript work with:
 
-### Other setup steps
+```powershell
+npm.cmd start
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+The app uses custom native notification/reminder functionality and needs its own development build. Expo Go is not the target runtime.
 
-## Learn more
+## Standalone Android test build
 
-To learn more about developing your project with Expo, look at the following resources:
+Save a backup, stop Metro, then build and install the release variant:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```powershell
+npm.cmd run android:standalone
+```
 
-## Join the community
+This embeds the production JavaScript bundle and runs without Metro afterward. See [standalone Android testing](docs/standalone-android-testing.md) for signing/data expectations, phone tests, generated APK location, and switching back to development. Store distribution/signing is a separate step.
 
-Join our community of developers creating universal apps.
+## Checks
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```text
+npx tsc --noEmit
+npx expo lint
+npx jest --preset jest-expo --runInBand --silent --testTimeout=15000
+```
+
+SQLite integration checks use Node 24+:
+
+```text
+node scripts/verify-database-startup.cjs
+node scripts/verify-backup.cjs
+node scripts/verify-reminder-restore.cjs
+```
+
+Additional implementation and device-test guides are in [docs](docs).
