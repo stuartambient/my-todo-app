@@ -4,7 +4,7 @@ import { INITIAL_SCHEMA, migrateDatabase } from './migrations';
 import { seedDatabase } from './seed';
 
 // Owns todo.db's user_version. Future schema/seed changes must bump this value.
-export const DATABASE_VERSION = 1;
+export const DATABASE_VERSION = 2;
 const MAX_ATTEMPTS = 5;
 
 export function isDatabaseLock(error: unknown): boolean {

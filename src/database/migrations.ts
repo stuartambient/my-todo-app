@@ -113,6 +113,7 @@ export async function migrateDatabase(
         ],
         ['recurrence_anchor_date', 'TEXT'],
         ['recurrence_source_id', 'TEXT'],
+        ['recurrence_end_date', 'TEXT'],
     ] as const;
 
     for (const [name, definition] of additions) {

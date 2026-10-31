@@ -63,10 +63,10 @@ class Adapter {
     }
 }
 const now = new Date().toISOString();
-function insertLegacyTodo(db) {
+function insertLegacyTodo(db, typeName = 'Task') {
     db.prepare(
         'INSERT INTO todo_types (id,name,created_at,updated_at) VALUES (?,?,?,?)',
-    ).run('existing-task', 'Task', now, now);
+    ).run('existing-task', typeName, now, now);
     db.prepare(
         'INSERT INTO todos (id,type_id,subject,notes,created_at,updated_at) VALUES (?,?,?,?,?,?)',
     ).run(
@@ -196,6 +196,65 @@ async function main() {
         assert.equal(row.notes, 'Preserve these notes');
         assert.equal(row.type_id, 'existing-task');
     });
+    // Recreate the installed version-1 schema, including stored reminders and
+    // completed history, then exercise the actual in-place upgrade.
+    const v1File = path.join(directory, 'version-one.db');
+    const v1 = new Adapter(v1File);
+    await initializeConnection(v1);
+    insertLegacyTodo(v1.db, 'Custom existing type');
+    v1.db
+        .prepare(
+            `INSERT INTO todos (id,type_id,subject,status,created_at,updated_at,completed_at) VALUES (?,?,?,'completed',?,?,?)`,
+        )
+        .run(
+            'completed-todo',
+            'existing-task',
+            'Completed history',
+            now,
+            now,
+            now,
+        );
+    v1.db
+        .prepare(
+            'INSERT INTO todos (id,type_id,subject,created_at,updated_at) VALUES (?,?,?,?,?)',
+        )
+        .run('undated-todo', 'existing-task', 'No due date', now, now);
+    v1.db.exec(`ALTER TABLE todos DROP COLUMN recurrence_end_date;
+        PRAGMA user_version = 1;
+        UPDATE todos SET due_date = '2030-06-15', due_time = '23:55',
+            reminder_at = '2030-06-15T20:00:00.000Z', recurrence_frequency = 'day',
+            recurrence_interval = 1, recurrence_basis = 'due_date',
+            recurrence_anchor_date = '2030-06-15' WHERE id = 'existing-todo';`);
+    const beforeV1 = v1.db.prepare('SELECT * FROM todos ORDER BY id').all();
+    const beforeTypes = v1.db
+        .prepare('SELECT * FROM todo_types ORDER BY id')
+        .all();
+    const upgradedV1 = new Adapter(v1File);
+    await initializeConnection(upgradedV1);
+    check(
+        'version-1 upgrade preserves every todo field and type and defaults to no end date',
+        () => {
+            const after = upgradedV1.db
+                .prepare('SELECT * FROM todos ORDER BY id')
+                .all();
+            assert.deepEqual(
+                after.map(({ recurrence_end_date, ...row }) => ({ ...row })),
+                beforeV1.map((row) => ({ ...row })),
+            );
+            assert(after.every((row) => row.recurrence_end_date === null));
+            assert.deepEqual(
+                upgradedV1.db
+                    .prepare('SELECT * FROM todo_types ORDER BY id')
+                    .all(),
+                beforeTypes,
+            );
+            assert.equal(
+                upgradedV1.db.prepare('PRAGMA user_version').get().user_version,
+                DATABASE_VERSION,
+            );
+        },
+    );
+
     const rollback = new Adapter(path.join(directory, 'rollback.db'));
     rollback.db.exec(INITIAL_SCHEMA);
     insertLegacyTodo(rollback.db);

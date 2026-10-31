@@ -66,8 +66,21 @@ export const todoSchema = z
         recurrenceInterval: z.number().int().positive().nullable(),
 
         recurrenceBasis: z.enum(['due_date', 'completion_date']).nullable(),
+        recurrenceEndDate: nullableDate,
     })
     .superRefine((todo, context) => {
+        if (
+            todo.recurrenceFrequency !== null &&
+            todo.recurrenceEndDate !== null &&
+            todo.dueDate !== null &&
+            todo.recurrenceEndDate < todo.dueDate
+        ) {
+            context.addIssue({
+                code: 'custom',
+                path: ['recurrenceEndDate'],
+                message: 'Repeat end date must be on or after the due date.',
+            });
+        }
         if (todo.dueTime !== null && todo.dueDate === null) {
             context.addIssue({
                 code: 'custom',
@@ -117,6 +130,9 @@ export const todoSchema = z
     })
     .transform((todo) => ({
         ...todo,
+        recurrenceEndDate: todo.recurrenceFrequency
+            ? todo.recurrenceEndDate
+            : null,
         recurrenceInterval: todo.recurrenceFrequency
             ? todo.recurrenceInterval
             : null,

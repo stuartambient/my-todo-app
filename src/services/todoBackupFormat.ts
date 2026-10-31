@@ -40,6 +40,7 @@ const rowSchema = z
             .nullable(),
         recurrence_interval: z.number().int().positive().nullable(),
         recurrence_basis: z.enum(['due_date', 'completion_date']).nullable(),
+        recurrence_end_date: date.default(null),
         recurrence_anchor_date: date,
         recurrence_source_id: id.nullable(),
         created_at: timestamp,
@@ -66,7 +67,7 @@ const rowSchema = z
 export const backupSchema = z
     .object({
         format: z.literal('todoapp-backup'),
-        version: z.literal(1),
+        version: z.union([z.literal(1), z.literal(2)]),
         exportedAt: timestamp,
         todoTypes: z.array(typeSchema).max(10000),
         categories: z.array(categorySchema).max(10000),
@@ -132,7 +133,8 @@ export function validateBackup(value: unknown): TodoBackup {
         'format' in value &&
         value.format === 'todoapp-backup' &&
         'version' in value &&
-        value.version !== 1
+        value.version !== 1 &&
+        value.version !== 2
     ) {
         throw new Error(
             'This backup uses a different format version. Update TodoApp before restoring it.',

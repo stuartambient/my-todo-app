@@ -18,7 +18,7 @@ export function createBackup(): Promise<TodoBackup> {
             await lock(transaction);
             backup = validateBackup({
                 format: 'todoapp-backup',
-                version: 1,
+                version: 2,
                 exportedAt: new Date().toISOString(),
                 todoTypes: await transaction.getAllAsync<TodoTypeRow>(
                     'SELECT * FROM todo_types ORDER BY id',

@@ -52,6 +52,7 @@ test('quick entry saves a subject with a default type and no optional details', 
         recurrenceFrequency: null,
         recurrenceInterval: null,
         recurrenceBasis: null,
+        recurrenceEndDate: null,
     });
 });
 
@@ -105,6 +106,7 @@ test('optional details survive collapsing and keep the existing scheduling value
         recurrenceFrequency: 'month',
         recurrenceInterval: 2,
         recurrenceBasis: 'due_date',
+        recurrenceEndDate: null,
     });
 });
 
@@ -170,6 +172,7 @@ test('editing opens with all existing values and no automatic keyboard', async (
         recurrenceFrequency: 'month',
         recurrenceInterval: 1,
         recurrenceBasis: 'due_date',
+        recurrenceEndDate: null,
     };
     await render(
         <TodoForm
@@ -231,6 +234,7 @@ test.each(['Clear due time', 'Clear due date'])(
             recurrenceFrequency: null,
             recurrenceInterval: null,
             recurrenceBasis: null,
+            recurrenceEndDate: null,
         };
         await render(
             <TodoForm
@@ -384,4 +388,72 @@ test('dirty tracking ignores opening options and returns clean when edits are re
         screen.getByRole('button', { name: 'Clear due date' }),
     );
     expect(changed).toHaveBeenLastCalledWith(false);
+});
+
+test('an existing repeating todo can set, edit and clear its optional end date', async () => {
+    const initialValues: TodoFormValues = {
+        typeId: 'task',
+        categoryId: null,
+        subject: 'Eye drops',
+        notes: null,
+        priority: 'normal',
+        dueDate: '2030-06-15',
+        dueTime: null,
+        reminderAt: null,
+        recurrenceFrequency: 'day',
+        recurrenceInterval: 1,
+        recurrenceBasis: 'due_date',
+        recurrenceEndDate: null,
+    };
+    await render(
+        <TodoForm
+            todoTypes={types}
+            initialValues={initialValues}
+            onSubmit={save}
+        />,
+    );
+    expect(screen.getByText('Never')).toBeTruthy();
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Choose repeat end date' }),
+    );
+    const picker = jest
+        .mocked(DateTimePickerAndroid.open)
+        .mock.calls.at(-1)![0];
+    await act(() => picker.onValueChange!({} as never, new Date(2030, 5, 21)));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(save.mock.calls[0][0]).toMatchObject({
+        recurrenceEndDate: '2030-06-21',
+        reminderAt: null,
+    });
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Clear repeat end date' }),
+    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(save.mock.calls[1][0].recurrenceEndDate).toBeNull();
+    await fireEvent.press(screen.getByText('None'));
+    expect(
+        screen.queryByRole('button', { name: 'Choose repeat end date' }),
+    ).toBeNull();
+});
+
+test('changing the due date past the end date shows an error and preserves the draft', async () => {
+    await render(<TodoForm todoTypes={types} onSubmit={save} />);
+    await fireEvent.changeText(screen.getByLabelText('Subject'), 'Eye drops');
+    await fireEvent.press(screen.getByText('Daily'));
+    for (const [name, date] of [
+        ['Choose due date', new Date(2030, 5, 22)],
+        ['Choose repeat end date', new Date(2030, 5, 21)],
+    ] as const) {
+        await fireEvent.press(screen.getByRole('button', { name }));
+        const picker = jest
+            .mocked(DateTimePickerAndroid.open)
+            .mock.calls.at(-1)![0];
+        await act(() => picker.onValueChange!({} as never, date));
+    }
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(save).not.toHaveBeenCalled();
+    expect(
+        screen.getByText('Repeat end date must be on or after the due date.'),
+    ).toBeTruthy();
+    expect(screen.getByLabelText('Subject').props.value).toBe('Eye drops');
 });

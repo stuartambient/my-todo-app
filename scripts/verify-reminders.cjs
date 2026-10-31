@@ -158,6 +158,7 @@ async function main() {
         recurrenceFrequency: null,
         recurrenceInterval: null,
         recurrenceBasis: null,
+        recurrenceEndDate: null,
     };
     const first = await repository.createTodo(values);
     check('creating a todo schedules its saved reminder', () => {
@@ -247,6 +248,7 @@ async function main() {
         recurrenceFrequency: 'month',
         recurrenceInterval: 1,
         recurrenceBasis: 'due_date',
+        recurrenceEndDate: null,
     };
     const recurring = await repository.createTodo(recurringValues);
     await repository.completeTodo(recurring.id);
@@ -532,6 +534,7 @@ async function main() {
         recurrenceFrequency: 'day',
         recurrenceInterval: 1,
         recurrenceBasis: 'due_date',
+        recurrenceEndDate: null,
     });
     const repeatingAction = {
         id: repeatingActionTodo.id,
@@ -560,6 +563,7 @@ async function main() {
         recurrenceFrequency: 'day',
         recurrenceInterval: 1,
         recurrenceBasis: 'due_date',
+        recurrenceEndDate: null,
     });
     const retryAction = {
         id: retryActionTodo.id,
@@ -802,6 +806,7 @@ async function main() {
         recurrenceFrequency: 'month',
         recurrenceInterval: 1,
         recurrenceBasis: 'due_date',
+        recurrenceEndDate: null,
     };
     const timedRepeat = await repository.createTodo(timedRepeatValues);
     await repository.completeTodo(timedRepeat.id);
@@ -834,6 +839,7 @@ async function main() {
     const completionRepeat = await repository.createTodo({
         ...timedRepeatValues,
         recurrenceBasis: 'completion_date',
+        recurrenceEndDate: null,
     });
     await repository.completeTodo(completionRepeat.id);
     check(
@@ -877,6 +883,179 @@ async function main() {
                 .get(timedAction.id);
             assert.equal(next.due_time, '09:15');
             assert.equal(next.due_date, '2030-02-28');
+        },
+    );
+    // Real repository/SQLite boundary checks for bounded series, including
+    // notification completion and untouched overdue occurrences.
+    const limited = await repository.createTodo({
+        ...values,
+        dueDate: '2090-06-01',
+        reminderAt: null,
+        recurrenceFrequency: 'day',
+        recurrenceInterval: 1,
+        recurrenceBasis: 'due_date',
+        recurrenceEndDate: '2090-06-02',
+    });
+    await repository.completeTodo(limited.id);
+    const final = database.db
+        .prepare('SELECT * FROM todos WHERE recurrence_source_id = ?')
+        .get(limited.id);
+    check(
+        'the next occurrence may fall on the inclusive end date and inherits the limit',
+        () => {
+            assert.equal(final.due_date, '2090-06-02');
+            assert.equal(final.recurrence_end_date, '2090-06-02');
+        },
+    );
+    await repository.completeTodo(final.id);
+    await repository.reopenTodo(final.id);
+    await repository.completeTodo(final.id);
+    check(
+        'completing or reopening the final occurrence never creates a successor',
+        () => {
+            assert.equal(
+                database.db
+                    .prepare(
+                        'SELECT COUNT(*) AS n FROM todos WHERE recurrence_source_id = ?',
+                    )
+                    .get(final.id).n,
+                0,
+            );
+            assert.equal(
+                database.db
+                    .prepare('SELECT status FROM todos WHERE id = ?')
+                    .get(final.id).status,
+                'completed',
+            );
+        },
+    );
+    const overdue = await repository.createTodo({
+        ...values,
+        dueDate: '2000-01-01',
+        reminderAt: null,
+        recurrenceFrequency: 'day',
+        recurrenceInterval: 1,
+        recurrenceBasis: 'due_date',
+        recurrenceEndDate: '2000-01-07',
+    });
+    await repository.refreshTodoReminders();
+    check(
+        'a series past its end date remains open without being automatically completed',
+        () => {
+            assert.equal(
+                database.db
+                    .prepare('SELECT status FROM todos WHERE id = ?')
+                    .get(overdue.id).status,
+                'open',
+            );
+        },
+    );
+    await repository.completeTodo(overdue.id);
+    check(
+        'completing an overdue series after its limit creates no new todo',
+        () => {
+            assert.equal(
+                database.db
+                    .prepare(
+                        'SELECT COUNT(*) AS n FROM todos WHERE recurrence_source_id = ?',
+                    )
+                    .get(overdue.id).n,
+                0,
+            );
+        },
+    );
+    const updated = await repository.createTodo({
+        ...values,
+        dueDate: '2090-06-01',
+        reminderAt: null,
+        recurrenceFrequency: 'day',
+        recurrenceInterval: 1,
+        recurrenceBasis: 'due_date',
+    });
+    await repository.updateTodo(updated.id, {
+        ...updated,
+        recurrenceEndDate: '2090-06-01',
+    });
+    await repository.completeTodo(updated.id);
+    check('an existing unlimited series can be given a final date', () => {
+        assert.equal(
+            database.db
+                .prepare(
+                    'SELECT COUNT(*) AS n FROM todos WHERE recurrence_source_id = ?',
+                )
+                .get(updated.id).n,
+            0,
+        );
+    });
+    const cleared = await repository.createTodo({
+        ...updated,
+        recurrenceEndDate: '2090-06-01',
+    });
+    await repository.updateTodo(cleared.id, {
+        ...cleared,
+        recurrenceEndDate: null,
+    });
+    await repository.completeTodo(cleared.id);
+    check('clearing an end date restores unlimited recurrence', () => {
+        assert.equal(
+            database.db
+                .prepare(
+                    'SELECT due_date FROM todos WHERE recurrence_source_id = ?',
+                )
+                .get(cleared.id).due_date,
+            '2090-06-02',
+        );
+    });
+    const actionFinal = await repository.createTodo({
+        ...values,
+        dueDate: '2000-01-01',
+        recurrenceFrequency: 'day',
+        recurrenceInterval: 1,
+        recurrenceBasis: 'completion_date',
+        recurrenceEndDate: '2000-01-07',
+    });
+    await repository.applyTodoReminderAction({
+        id: actionFinal.id,
+        reminderAt: actionFinal.reminderAt,
+        notificationDate: 987654,
+        action: 'complete',
+    });
+    check(
+        'notification Complete respects the end date for completion-based repeats',
+        () => {
+            assert.equal(
+                database.db
+                    .prepare(
+                        'SELECT COUNT(*) AS n FROM todos WHERE recurrence_source_id = ?',
+                    )
+                    .get(actionFinal.id).n,
+                0,
+            );
+            assert.equal(
+                database.db
+                    .prepare('SELECT status FROM todos WHERE id = ?')
+                    .get(actionFinal.id).status,
+                'completed',
+            );
+        },
+    );
+    const earlyFinal = await repository.createTodo({
+        ...updated,
+        recurrenceBasis: 'completion_date',
+        recurrenceEndDate: updated.dueDate,
+    });
+    await repository.completeTodo(earlyFinal.id);
+    check(
+        'completing a final future occurrence early still ends a completion-based series',
+        () => {
+            assert.equal(
+                database.db
+                    .prepare(
+                        'SELECT COUNT(*) AS n FROM todos WHERE recurrence_source_id = ?',
+                    )
+                    .get(earlyFinal.id).n,
+                0,
+            );
         },
     );
     console.log(`\n${checks} SQLite integration checks passed.`);

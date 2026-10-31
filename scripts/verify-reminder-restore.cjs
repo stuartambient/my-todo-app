@@ -203,6 +203,7 @@ async function main() {
         recurrenceFrequency: null,
         recurrenceInterval: null,
         recurrenceBasis: null,
+        recurrenceEndDate: null,
     };
     const missing = await todos.createTodo(base);
     const repeating = await todos.createTodo({
@@ -211,6 +212,7 @@ async function main() {
         recurrenceFrequency: 'month',
         recurrenceInterval: 1,
         recurrenceBasis: 'due_date',
+        recurrenceEndDate: null,
     });
     const shown = await todos.createTodo({ ...base, subject: 'Already shown' });
     const late = await todos.createTodo({

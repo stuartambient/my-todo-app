@@ -26,6 +26,7 @@ export type Todo = {
     recurrenceFrequency: RecurrenceFrequency | null;
     recurrenceInterval: number | null;
     recurrenceBasis: RecurrenceBasis | null;
+    recurrenceEndDate: string | null;
 
     createdAt: string;
     updatedAt: string;

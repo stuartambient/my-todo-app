@@ -222,6 +222,7 @@ function TodoEditor({ id }: { id: string }) {
         reminderAt: todo.reminderAt,
         recurrenceFrequency: todo.recurrenceFrequency,
         recurrenceInterval: todo.recurrenceInterval,
+        recurrenceEndDate: todo.recurrenceEndDate,
         recurrenceBasis: todo.recurrenceFrequency
             ? (todo.recurrenceBasis ?? 'due_date')
             : null,

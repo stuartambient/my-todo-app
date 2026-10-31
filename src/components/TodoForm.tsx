@@ -51,6 +51,7 @@ const DEFAULT_VALUES: TodoFormValues = {
     recurrenceFrequency: null,
     recurrenceInterval: null,
     recurrenceBasis: null,
+    recurrenceEndDate: null,
 };
 
 function parseStoredDate(value: string): Date {
@@ -591,6 +592,17 @@ export function TodoForm({
                                                 onPress={() => {
                                                     onChange(frequency);
 
+                                                    if (frequency === null) {
+                                                        setValue(
+                                                            'recurrenceEndDate',
+                                                            null,
+                                                            {
+                                                                shouldDirty: true,
+                                                                shouldValidate: true,
+                                                            },
+                                                        );
+                                                    }
+
                                                     setValue(
                                                         'recurrenceBasis',
                                                         frequency === null
@@ -753,6 +765,97 @@ export function TodoForm({
                                         ? 'The interval starts on the day you complete this todo.'
                                         : 'Keeps the original schedule. If dates are missed, the next occurrence is in the future.'}
                                 </Text>
+
+                                <Text style={styles.label}>
+                                    Ends on (optional)
+                                </Text>
+                                <Controller
+                                    control={control}
+                                    name="recurrenceEndDate"
+                                    render={({
+                                        field: { value, onChange },
+                                    }) => (
+                                        <View style={styles.scheduleField}>
+                                            <Pressable
+                                                style={styles.dateButton}
+                                                accessibilityRole="button"
+                                                accessibilityLabel="Choose repeat end date"
+                                                disabled={submitDisabled}
+                                                onPress={() => {
+                                                    DateTimePickerAndroid.open({
+                                                        value: parseStoredDate(
+                                                            value ??
+                                                                dueDate ??
+                                                                format(
+                                                                    new Date(),
+                                                                    'yyyy-MM-dd',
+                                                                ),
+                                                        ),
+                                                        mode: 'date',
+                                                        onValueChange: (
+                                                            _event,
+                                                            selectedDate,
+                                                        ) => {
+                                                            onChange(
+                                                                format(
+                                                                    selectedDate,
+                                                                    'yyyy-MM-dd',
+                                                                ),
+                                                            );
+                                                        },
+                                                    });
+                                                }}
+                                            >
+                                                <Text
+                                                    style={
+                                                        value
+                                                            ? styles.dateText
+                                                            : styles.datePlaceholder
+                                                    }
+                                                >
+                                                    {value
+                                                        ? format(
+                                                              parseStoredDate(
+                                                                  value,
+                                                              ),
+                                                              'MMM d, yyyy',
+                                                          )
+                                                        : 'Never'}
+                                                </Text>
+                                            </Pressable>
+                                            {value && (
+                                                <Pressable
+                                                    accessibilityRole="button"
+                                                    accessibilityLabel="Clear repeat end date"
+                                                    disabled={submitDisabled}
+                                                    style={
+                                                        styles.clearScheduleButton
+                                                    }
+                                                    onPress={() =>
+                                                        onChange(null)
+                                                    }
+                                                >
+                                                    <Text
+                                                        style={
+                                                            styles.clearDateText
+                                                        }
+                                                    >
+                                                        Never end
+                                                    </Text>
+                                                </Pressable>
+                                            )}
+                                        </View>
+                                    )}
+                                />
+                                <Text style={styles.helperText}>
+                                    No new occurrences after this date.
+                                    Unfinished todos stay open.
+                                </Text>
+                                {errors.recurrenceEndDate && (
+                                    <Text style={styles.errorText}>
+                                        {errors.recurrenceEndDate.message}
+                                    </Text>
+                                )}
 
                                 {errors.recurrenceBasis && (
                                     <Text style={styles.errorText}>

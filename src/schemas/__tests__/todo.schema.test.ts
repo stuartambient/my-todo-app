@@ -14,6 +14,7 @@ const values = {
     recurrenceFrequency: null,
     recurrenceInterval: null,
     recurrenceBasis: null,
+    recurrenceEndDate: null,
 };
 
 test.each(['00:00', '09:05', '12:00', '23:59'])(
@@ -45,4 +46,28 @@ test('a due time requires a date; date-only and undated todos remain valid', () 
         expect(invalid.error.issues[0].path).toEqual(['dueTime']);
     expect(todoSchema.parse(values).dueTime).toBeNull();
     expect(todoSchema.parse({ ...values, dueDate: null }).dueTime).toBeNull();
+});
+
+test('repeat end date is optional, inclusive and cannot precede the current due date', () => {
+    const repeat = {
+        ...values,
+        recurrenceFrequency: 'day',
+        recurrenceInterval: 1,
+        recurrenceBasis: 'due_date',
+    };
+    for (const recurrenceEndDate of [null, '2030-06-15', '2030-06-22']) {
+        expect(
+            todoSchema.parse({ ...repeat, recurrenceEndDate })
+                .recurrenceEndDate,
+        ).toBe(recurrenceEndDate);
+    }
+    for (const recurrenceEndDate of ['2030-06-14', '2030-02-30']) {
+        expect(
+            todoSchema.safeParse({ ...repeat, recurrenceEndDate }).success,
+        ).toBe(false);
+    }
+    expect(
+        todoSchema.parse({ ...values, recurrenceEndDate: '2030-06-22' })
+            .recurrenceEndDate,
+    ).toBeNull();
 });

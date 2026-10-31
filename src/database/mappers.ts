@@ -40,6 +40,7 @@ export type TodoRow = {
     recurrence_frequency: string | null;
     recurrence_interval: number | null;
     recurrence_basis: string | null;
+    recurrence_end_date: string | null;
     recurrence_anchor_date: string | null;
     recurrence_source_id: string | null;
     created_at: string;
@@ -86,6 +87,7 @@ export function mapTodoRow(row: TodoRow): Todo {
             row.recurrence_frequency as RecurrenceFrequency | null,
         recurrenceInterval: row.recurrence_interval,
         recurrenceBasis: row.recurrence_basis as RecurrenceBasis | null,
+        recurrenceEndDate: row.recurrence_end_date ?? null,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         completedAt: row.completed_at,

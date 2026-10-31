@@ -64,6 +64,7 @@ const saved: Todo = {
     recurrenceFrequency: null,
     recurrenceInterval: null,
     recurrenceBasis: null,
+    recurrenceEndDate: null,
     createdAt: '2030-06-01T12:00:00Z',
     updatedAt: '2030-06-01T12:00:00Z',
     completedAt: null,

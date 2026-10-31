@@ -8,7 +8,7 @@ Previously every startup ran the full schema script, recurrence migration, and d
 
 - Initialization opens a dedicated `useNewConnection: true` handle. A failed attempt closes only that handle; it does not borrow or close a native cached connection another runtime may be using.
 - Connection-local foreign key enforcement and a busy timeout are configured before use.
-- `PRAGMA user_version` identifies an up-to-date database. Version 1 means the existing schema, recurrence backfill/index, and default types have all been committed. Healthy startups perform no schema, seed, or lock-row writes.
+- `PRAGMA user_version` identifies an up-to-date database. Version 2 adds the nullable repeat end date to the version-1 schema. Existing rows keep all prior fields and receive a null end date. Healthy startups perform no schema, seed, or lock-row writes.
 - For an unversioned/older database, WAL is enabled only if necessary, before starting the upgrade transaction. `BEGIN IMMEDIATE` acquires the writer before migration reads. The version is checked again inside the transaction in case another runtime already upgraded it.
 - Schema creation, recurrence migration, default types, and the version stamp commit together. Errors roll the whole upgrade back; the original todo rows remain. This also upgrades existing installations whose previous code never set `user_version`.
 - Only SQLite lock/busy failures retry, at most five attempts, with short asynchronous backoff. Non-lock failures propagate immediately. Rollback failure aborts the connection instead of retrying inside an uncertain transaction.

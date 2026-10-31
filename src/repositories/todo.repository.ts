@@ -97,9 +97,9 @@ async function insertTodo(
         `INSERT INTO todos (
             id, type_id, category_id, subject, notes, status, priority,
             due_date, due_time, reminder_at, recurrence_frequency, recurrence_interval,
-            recurrence_basis, recurrence_anchor_date, recurrence_source_id,
+            recurrence_basis, recurrence_end_date, recurrence_anchor_date, recurrence_source_id,
             created_at, updated_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
         id,
         input.typeId,
         input.categoryId,
@@ -112,6 +112,7 @@ async function insertTodo(
         input.recurrenceFrequency,
         input.recurrenceInterval,
         input.recurrenceBasis,
+        input.recurrenceEndDate,
         anchorDate,
         sourceId,
         now,
@@ -199,7 +200,7 @@ export function updateTodo(id: string, input: UpdateTodoInput): Promise<void> {
             `UPDATE todos SET
                 type_id = ?, category_id = ?, subject = ?, notes = ?, priority = ?,
                 due_date = ?, due_time = ?, reminder_at = ?, recurrence_frequency = ?,
-                recurrence_interval = ?, recurrence_basis = ?,
+                recurrence_interval = ?, recurrence_basis = ?, recurrence_end_date = ?,
                 recurrence_anchor_date = ?, updated_at = ?
             WHERE id = ?`,
             values.typeId,
@@ -213,6 +214,7 @@ export function updateTodo(id: string, input: UpdateTodoInput): Promise<void> {
             values.recurrenceFrequency,
             values.recurrenceInterval,
             values.recurrenceBasis,
+            values.recurrenceEndDate,
             anchorDate,
             new Date().toISOString(),
             id,
@@ -245,7 +247,12 @@ async function completeTodoInTransaction(
     const now = completedAt.toISOString();
     const todo = mapTodoRow(row);
 
-    if (todo.recurrenceFrequency) {
+    const isFinalOccurrence = Boolean(
+        todo.recurrenceEndDate &&
+        todo.dueDate &&
+        todo.dueDate >= todo.recurrenceEndDate,
+    );
+    if (todo.recurrenceFrequency && !isFinalOccurrence) {
         const successor = await transaction.getFirstAsync<{
             id: string;
         }>('SELECT id FROM todos WHERE recurrence_source_id = ?', id);
@@ -272,26 +279,30 @@ async function completeTodoInTransaction(
                 anchorDate: row.recurrence_anchor_date,
                 completedAt,
             });
-            const nextValues = todoSchema.parse({
-                ...todo,
-                dueDate: nextDate,
-                reminderAt: shiftReminder(
-                    todo.reminderAt,
-                    todo.dueDate,
-                    nextDate,
-                ),
-                recurrenceBasis: basis,
-            });
+            // Calendar date comparison is inclusive. Completing a final or
+            // overdue occurrence never creates a successor beyond the limit.
+            if (!todo.recurrenceEndDate || nextDate <= todo.recurrenceEndDate) {
+                const nextValues = todoSchema.parse({
+                    ...todo,
+                    dueDate: nextDate,
+                    reminderAt: shiftReminder(
+                        todo.reminderAt,
+                        todo.dueDate,
+                        nextDate,
+                    ),
+                    recurrenceBasis: basis,
+                });
 
-            await insertTodo(
-                transaction,
-                nextValues,
-                now,
-                basis === 'due_date'
-                    ? (row.recurrence_anchor_date ?? todo.dueDate)
-                    : nextDate,
-                id,
-            );
+                await insertTodo(
+                    transaction,
+                    nextValues,
+                    now,
+                    basis === 'due_date'
+                        ? (row.recurrence_anchor_date ?? todo.dueDate)
+                        : nextDate,
+                    id,
+                );
+            }
         }
     }
 

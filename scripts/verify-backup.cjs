@@ -107,6 +107,7 @@ async function main() {
         recurrenceFrequency: 'month',
         recurrenceInterval: 1,
         recurrenceBasis: 'due_date',
+        recurrenceEndDate: '2035-04-30',
     };
     const first = await repo.createTodo(values);
     await repo.completeTodo(first.id);
@@ -117,12 +118,19 @@ async function main() {
         recurrenceFrequency: null,
         recurrenceInterval: null,
         recurrenceBasis: null,
+        recurrenceEndDate: null,
     });
     const backup = await backupRepo.createBackup();
     check(
         'export includes open/completed rows, notes, midnight and recurrence lineage',
         () => {
             assert.equal(backup.todos.length, 3);
+            assert.equal(backup.version, 2);
+            assert.equal(
+                backup.todos.find((row) => row.id === first.id)
+                    .recurrence_end_date,
+                '2035-04-30',
+            );
             assert.equal(
                 backup.todos.find((row) => row.id === first.id).status,
                 'completed',
@@ -347,6 +355,29 @@ async function main() {
     assert.throws(() => backupRepo.restoreBackup(malformed), /not a valid/);
     check('malformed backup changes nothing', () =>
         assert.equal(reconciliations.length, syncCount),
+    );
+    const { recurrence_end_date: omittedLimit, ...oldRow } = backup.todos.find(
+        (row) => row.id === first.id,
+    );
+    const legacyBackup = {
+        ...backup,
+        version: 1,
+        todos: [
+            { ...oldRow, id: 'legacy-unlimited', recurrence_source_id: null },
+        ],
+    };
+    await backupRepo.restoreBackup(legacyBackup);
+    check(
+        'a version-1 backup imports as an unlimited series without losing other fields',
+        () => {
+            const row = database.db
+                .prepare('SELECT * FROM todos WHERE id = ?')
+                .get('legacy-unlimited');
+            assert.equal(row.recurrence_end_date, null);
+            assert.equal(row.due_time, oldRow.due_time);
+            assert.equal(row.reminder_at, oldRow.reminder_at);
+            assert.equal(row.notes, oldRow.notes);
+        },
     );
     console.log(`${checks} backup integration checks passed.`);
 }

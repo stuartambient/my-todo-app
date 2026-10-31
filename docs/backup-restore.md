@@ -28,7 +28,7 @@ This is not a way to replace the current database with an old snapshot or undo c
 
 ## Format and limits
 
-`format: "todoapp-backup"`, `version: 1`, `exportedAt`, `todoTypes`, `categories`, `todos`.
+`format: "todoapp-backup"`, `version: 2`, `exportedAt`, `todoTypes`, `categories`, `todos`.
 
 Files are validated before preview and again before restore: strict fields/enums, valid dates/times/timestamps, completion/repeat consistency, unique IDs/names/recurrence sources, no circular ancestry, and valid type/category references. Missing deleted recurrence predecessors are allowed. Unknown format versions receive an update message. Limits: 20 MiB UTF-8 JSON, 50,000 todos, 10,000 types/categories each. Export enforces the same size/format constraints so it cannot quietly produce an unrestorable file. SQL column names come only from strict validated records and table names are fixed constants.
 
@@ -46,3 +46,5 @@ Adds SDK 57-compatible `expo-document-picker` and a direct dependency on the alr
 - `npx expo export --platform android --output-dir /tmp/todo-backup-export`
 
 Device review: choose a folder for the first backup, close/reopen TodoApp and save again without a picker; change folder and check future files go there; cancel a folder change and check the old destination remains; delete/rename a test backup folder and verify the recovery prompt without a false success. Then save a backup containing open/completed and repeating todos; cancel each picker; preview without restoring; restore the same file and verify zero duplicates; delete one test todo and restore to recover it; verify a future restored reminder fires and recurrence still works. Check malformed files show an error without a preview. For migration testing, use the emulator as a separate installation, copy the backup there, and restore without clearing the phone's working database. Android folder picker, file provider permissions, and notification delivery require actual Android testing.
+
+Version 2 includes the nullable `recurrence_end_date` on each todo. Version-1 files remain importable with no repeat end date. Older TodoApp builds reject version-2 files with an update message, preventing loss of the repeat limit.
