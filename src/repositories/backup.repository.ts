@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { adoptLegacySeries, type SeriesRow } from './recurrenceSeries';
 import { getDatabase } from '@/database/database';
 import type { CategoryRow, TodoTypeRow, TodoRow } from '@/database/mappers';
 import {
@@ -16,10 +17,14 @@ export function createBackup(): Promise<TodoBackup> {
         let backup!: TodoBackup;
         await database.withExclusiveTransactionAsync(async (transaction) => {
             await lock(transaction);
+            await adoptLegacySeries(transaction);
             backup = validateBackup({
                 format: 'todoapp-backup',
-                version: 2,
+                version: 3,
                 exportedAt: new Date().toISOString(),
+                series: await transaction.getAllAsync<SeriesRow>(
+                    'SELECT * FROM todo_recurrence_series ORDER BY id',
+                ),
                 todoTypes: await transaction.getAllAsync<TodoTypeRow>(
                     'SELECT * FROM todo_types ORDER BY id',
                 ),
@@ -83,6 +88,7 @@ export function restoreBackup(input: TodoBackup): Promise<RestoreResult> {
         const database = await getDatabase();
         const result = { added: 0, skipped: 0 };
         let futureReminderAdded = false;
+        let seriesAdded = false;
         await database.withExclusiveTransactionAsync(async (transaction) => {
             await lock(transaction);
             const types = await restoreNames(
@@ -95,11 +101,53 @@ export function restoreBackup(input: TodoBackup): Promise<RestoreResult> {
                 'categories',
                 backup.categories,
             );
+            const localSeries = await transaction.getAllAsync<SeriesRow>(
+                'SELECT * FROM todo_recurrence_series',
+            );
+            const bySeries = new Map(localSeries.map((row) => [row.id, row]));
+            for (const row of backup.series) {
+                if (bySeries.has(row.id)) continue;
+                const template = JSON.parse(row.template);
+                template.typeId = types.get(template.typeId)!;
+                template.categoryId =
+                    template.categoryId === null
+                        ? null
+                        : categories.get(template.categoryId)!;
+                const restored = { ...row, template: JSON.stringify(template) };
+                await transaction.runAsync(
+                    `INSERT INTO todo_recurrence_series (id, template, anchor_date, last_date, last_todo_id, active, excluded_dates, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    restored.id,
+                    restored.template,
+                    restored.anchor_date,
+                    restored.last_date,
+                    restored.last_todo_id,
+                    restored.active,
+                    restored.excluded_dates,
+                    restored.updated_at,
+                );
+                bySeries.set(row.id, restored);
+                seriesAdded = true;
+            }
             const existing = await transaction.getAllAsync<{
                 id: string;
                 recurrence_source_id: string | null;
-            }>('SELECT id, recurrence_source_id FROM todos');
+                recurrence_series_id: string | null;
+                due_date: string | null;
+            }>(
+                'SELECT id, recurrence_source_id, recurrence_series_id, due_date FROM todos',
+            );
             const ids = new Set(existing.map((row) => row.id));
+            const dates = new Set(
+                existing
+                    .filter((row) => row.recurrence_series_id)
+                    .map((row) =>
+                        JSON.stringify([
+                            row.recurrence_series_id,
+                            row.due_date,
+                        ]),
+                    ),
+            );
             const sources = new Map(
                 existing.flatMap((row) =>
                     row.recurrence_source_id
@@ -138,7 +186,27 @@ export function restoreBackup(input: TodoBackup): Promise<RestoreResult> {
                 }
             }
             for (const row of backup.todos) {
-                if (ids.has(row.id) || blocked.has(row.id)) {
+                const series = row.recurrence_series_id
+                    ? bySeries.get(row.recurrence_series_id)
+                    : null;
+                const dateKey = JSON.stringify([
+                    row.recurrence_series_id,
+                    row.due_date,
+                ]);
+                if (
+                    ids.has(row.id) ||
+                    blocked.has(row.id) ||
+                    (row.recurrence_series_id &&
+                        row.recurrence_basis === 'due_date' &&
+                        row.status === 'open' &&
+                        dates.has(dateKey)) ||
+                    (series &&
+                        row.status === 'open' &&
+                        (!series.active ||
+                            (
+                                JSON.parse(series.excluded_dates) as string[]
+                            ).includes(row.due_date!)))
+                ) {
                     result.skipped += 1;
                     continue;
                 }
@@ -158,6 +226,7 @@ export function restoreBackup(input: TodoBackup): Promise<RestoreResult> {
                     ...fields.map((field) => restored[field]),
                 );
                 ids.add(row.id);
+                if (row.recurrence_series_id) dates.add(dateKey);
                 if (row.recurrence_source_id)
                     sources.set(row.recurrence_source_id, row.id);
                 result.added += 1;
@@ -170,7 +239,7 @@ export function restoreBackup(input: TodoBackup): Promise<RestoreResult> {
             }
         });
         // Never schedule from a partially imported snapshot or replay old reminders.
-        if (result.added > 0) {
+        if (result.added > 0 || seriesAdded) {
             await synchronizeSavedReminders(futureReminderAdded);
             notifyTodoChanged('backup-restored');
         }

@@ -219,7 +219,10 @@ async function main() {
             'INSERT INTO todos (id,type_id,subject,created_at,updated_at) VALUES (?,?,?,?,?)',
         )
         .run('undated-todo', 'existing-task', 'No due date', now, now);
-    v1.db.exec(`ALTER TABLE todos DROP COLUMN recurrence_end_date;
+    v1.db.exec(`DROP INDEX idx_todos_series_date;
+        ALTER TABLE todos DROP COLUMN recurrence_end_date;
+        ALTER TABLE todos DROP COLUMN recurrence_series_id;
+        DROP TABLE todo_recurrence_series;
         PRAGMA user_version = 1;
         UPDATE todos SET due_date = '2030-06-15', due_time = '23:55',
             reminder_at = '2030-06-15T20:00:00.000Z', recurrence_frequency = 'day',
@@ -238,7 +241,13 @@ async function main() {
                 .prepare('SELECT * FROM todos ORDER BY id')
                 .all();
             assert.deepEqual(
-                after.map(({ recurrence_end_date, ...row }) => ({ ...row })),
+                after.map(
+                    ({
+                        recurrence_end_date,
+                        recurrence_series_id,
+                        ...row
+                    }) => ({ ...row }),
+                ),
                 beforeV1.map((row) => ({ ...row })),
             );
             assert(after.every((row) => row.recurrence_end_date === null));
@@ -250,6 +259,45 @@ async function main() {
             );
             assert.equal(
                 upgradedV1.db.prepare('PRAGMA user_version').get().user_version,
+                DATABASE_VERSION,
+            );
+        },
+    );
+
+    const v2 = new Adapter(path.join(directory, 'version-two.db'));
+    await initializeConnection(v2);
+    insertLegacyTodo(v2.db, 'Version two custom');
+    v2.db.exec(`DROP INDEX idx_todos_series_date;
+        ALTER TABLE todos DROP COLUMN recurrence_series_id;
+        DROP TABLE todo_recurrence_series;
+        PRAGMA user_version = 2;
+        UPDATE todos SET due_date = '2030-06-15', due_time = '23:55',
+            recurrence_frequency = 'day', recurrence_interval = 1,
+            recurrence_basis = 'due_date', recurrence_anchor_date = '2030-06-15',
+            recurrence_end_date = '2030-06-21', reminder_at = '2030-06-15T20:00:00.000Z';`);
+    const beforeV2 = v2.db
+        .prepare('SELECT * FROM todos ORDER BY id')
+        .all()
+        .map((row) => ({ ...row }));
+    await initializeConnection(v2);
+    check(
+        'version-2 upgrade preserves end dates and every other field while adding persistent series storage',
+        () => {
+            assert.deepEqual(
+                v2.db
+                    .prepare('SELECT * FROM todos ORDER BY id')
+                    .all()
+                    .map(({ recurrence_series_id, ...row }) => ({ ...row })),
+                beforeV2,
+            );
+            assert.equal(
+                v2.db
+                    .prepare('SELECT COUNT(*) AS n FROM todo_recurrence_series')
+                    .get().n,
+                0,
+            );
+            assert.equal(
+                v2.db.prepare('PRAGMA user_version').get().user_version,
                 DATABASE_VERSION,
             );
         },

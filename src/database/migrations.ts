@@ -114,6 +114,7 @@ export async function migrateDatabase(
         ['recurrence_anchor_date', 'TEXT'],
         ['recurrence_source_id', 'TEXT'],
         ['recurrence_end_date', 'TEXT'],
+        ['recurrence_series_id', 'TEXT'],
     ] as const;
 
     for (const [name, definition] of additions) {
@@ -126,6 +127,20 @@ export async function migrateDatabase(
     }
 
     await transaction.execAsync(`
+            CREATE TABLE IF NOT EXISTS todo_recurrence_series (
+                id TEXT PRIMARY KEY NOT NULL,
+                template TEXT NOT NULL,
+                anchor_date TEXT NOT NULL,
+                last_date TEXT NOT NULL,
+                last_todo_id TEXT NOT NULL,
+                active INTEGER NOT NULL CHECK(active IN (0, 1)),
+                excluded_dates TEXT NOT NULL DEFAULT '[]',
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_todos_series_date
+                ON todos(recurrence_series_id, due_date)
+                WHERE recurrence_series_id IS NOT NULL;
+
             UPDATE todos
             SET recurrence_basis = 'due_date'
             WHERE recurrence_frequency IS NOT NULL AND recurrence_basis IS NULL;

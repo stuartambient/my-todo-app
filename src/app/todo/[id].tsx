@@ -158,34 +158,51 @@ function TodoEditor({ id }: { id: string }) {
             return;
         }
 
+        const remove = (scope: 'occurrence' | 'series') => {
+            void guard
+                .perform(
+                    () => deleteTodo(todo.id, scope),
+                    () => router.back(),
+                )
+                .catch((err) => {
+                    console.error('Failed to delete todo:', err);
+                    Alert.alert(
+                        'Unable to delete todo',
+                        'An error occurred while deleting the todo.',
+                    );
+                });
+        };
+        const repeating = Boolean(
+            todo.recurrenceFrequency || todo.recurrenceSeriesId,
+        );
         Alert.alert(
-            'Delete Todo',
-            `Delete "${todo.subject}"?${guard.dirtyRef.current ? ' Your unsaved changes will also be discarded.' : ''}`,
-            [
-                {
-                    text: 'Cancel',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: () => {
-                        void guard
-                            .perform(
-                                () => deleteTodo(todo.id),
-                                () => router.back(),
-                            )
-                            .catch((err) => {
-                                console.error('Failed to delete todo:', err);
-
-                                Alert.alert(
-                                    'Unable to delete todo',
-                                    'An error occurred while deleting the todo.',
-                                );
-                            });
-                    },
-                },
-            ],
+            repeating ? 'Delete repeating todo' : 'Delete Todo',
+            `${
+                repeating
+                    ? 'Delete just this occurrence, or stop the entire series and remove all its open occurrences? Completed history is kept when deleting the series.'
+                    : `Delete "${todo.subject}"?`
+            }${guard.dirtyRef.current ? ' Your unsaved changes will also be discarded.' : ''}`,
+            repeating
+                ? [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                          text: 'Delete this occurrence',
+                          onPress: () => remove('occurrence'),
+                      },
+                      {
+                          text: 'Delete entire series',
+                          style: 'destructive',
+                          onPress: () => remove('series'),
+                      },
+                  ]
+                : [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                          text: 'Delete',
+                          style: 'destructive',
+                          onPress: () => remove('occurrence'),
+                      },
+                  ],
         );
     }
 

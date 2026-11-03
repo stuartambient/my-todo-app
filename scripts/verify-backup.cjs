@@ -125,7 +125,7 @@ async function main() {
         'export includes open/completed rows, notes, midnight and recurrence lineage',
         () => {
             assert.equal(backup.todos.length, 3);
-            assert.equal(backup.version, 2);
+            assert.equal(backup.version, 3);
             assert.equal(
                 backup.todos.find((row) => row.id === first.id)
                     .recurrence_end_date,
@@ -157,6 +157,7 @@ async function main() {
                     'todos',
                     'todoTypes',
                     'categories',
+                    'series',
                 ].sort(),
             );
         },
@@ -179,7 +180,9 @@ async function main() {
             'Locally edited',
         ),
     );
-    await database.execAsync('DELETE FROM todos; DELETE FROM todo_types;');
+    await database.execAsync(
+        'DELETE FROM todos; DELETE FROM todo_recurrence_series; DELETE FROM todo_types;',
+    );
     await seedDatabase(database);
     const freshType = await database.getFirstAsync(
         "SELECT id FROM todo_types WHERE name = 'Payment'",
@@ -232,7 +235,13 @@ async function main() {
             '2035-03-31',
         ),
     );
-    const empty = { ...backup, todos: [], categories: [], todoTypes: [] };
+    const empty = {
+        ...backup,
+        todos: [],
+        categories: [],
+        todoTypes: [],
+        series: [],
+    };
     const emptyResult = await backupRepo.restoreBackup(empty);
     check('empty restore is harmless', () =>
         assert.deepEqual(emptyResult, { added: 0, skipped: 0 }),
@@ -273,6 +282,7 @@ async function main() {
     };
     const extra = {
         ...backup,
+        series: [],
         todoTypes: [extraType],
         categories: [category],
         todos: [
@@ -282,6 +292,7 @@ async function main() {
                 type_id: extraType.id,
                 category_id: category.id,
                 recurrence_source_id: null,
+                recurrence_series_id: null,
             },
         ],
     };
@@ -330,8 +341,14 @@ async function main() {
                 id: 'new-good',
                 type_id: 'custom',
                 recurrence_source_id: null,
+                recurrence_series_id: null,
             },
-            { ...backup.todos[0], id: 'broken', recurrence_source_id: null },
+            {
+                ...backup.todos[0],
+                id: 'broken',
+                recurrence_source_id: null,
+                recurrence_series_id: null,
+            },
         ],
     };
     const syncCount = reconciliations.length;
@@ -356,12 +373,15 @@ async function main() {
     check('malformed backup changes nothing', () =>
         assert.equal(reconciliations.length, syncCount),
     );
-    const { recurrence_end_date: omittedLimit, ...oldRow } = backup.todos.find(
-        (row) => row.id === first.id,
-    );
+    const {
+        recurrence_end_date: omittedLimit,
+        recurrence_series_id: omittedSeries,
+        ...oldRow
+    } = backup.todos.find((row) => row.id === first.id);
     const legacyBackup = {
         ...backup,
         version: 1,
+        series: [],
         todos: [
             { ...oldRow, id: 'legacy-unlimited', recurrence_source_id: null },
         ],

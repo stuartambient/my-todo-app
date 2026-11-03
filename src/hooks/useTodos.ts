@@ -11,6 +11,7 @@ import {
     reopenTodo,
 } from '@/repositories/todo.repository';
 import type { Todo, TodoStatus } from '@/types/todo';
+import { localDateKey } from '@/utils/recurrence';
 
 export function useTodos(status: TodoStatus = 'open') {
     const [todos, setTodos] = useState<Todo[]>([]);
@@ -62,6 +63,18 @@ export function useTodos(status: TodoStatus = 'open') {
             unsubscribe();
             subscription.remove();
         };
+    }, [refresh]);
+
+    useEffect(() => {
+        let day = localDateKey(new Date());
+        const timer = setInterval(() => {
+            const nextDay = localDateKey(new Date());
+            if (nextDay !== day) {
+                day = nextDay;
+                void refresh();
+            }
+        }, 30_000);
+        return () => clearInterval(timer);
     }, [refresh]);
 
     const complete = useCallback(

@@ -43,6 +43,8 @@ SQLite integration checks use Node 24+:
 node scripts/verify-database-startup.cjs
 node scripts/verify-backup.cjs
 node scripts/verify-reminder-restore.cjs
+node scripts/verify-reminders.cjs
+node scripts/verify-scheduled-repeats.cjs
 ```
 
 Additional implementation and device-test guides are in [docs](docs).

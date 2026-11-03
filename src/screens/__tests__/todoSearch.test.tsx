@@ -66,6 +66,7 @@ const makeTodo = (values: Partial<Todo>): Todo => ({
     recurrenceInterval: null,
     recurrenceBasis: null,
     recurrenceEndDate: null,
+    recurrenceSeriesId: null,
     createdAt: '2030-06-01T12:00:00.000Z',
     updatedAt: '2030-06-01T12:00:00.000Z',
     completedAt: null,

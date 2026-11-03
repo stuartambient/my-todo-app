@@ -43,6 +43,7 @@ const rowSchema = z
         recurrence_end_date: date.default(null),
         recurrence_anchor_date: date,
         recurrence_source_id: id.nullable(),
+        recurrence_series_id: id.nullable().default(null),
         created_at: timestamp,
         updated_at: timestamp,
         completed_at: timestamp.nullable(),
@@ -64,14 +65,48 @@ const rowSchema = z
         }
     });
 
+const seriesSchema = z
+    .object({
+        id,
+        template: z.string().superRefine((text, context) => {
+            try {
+                todoSchema.parse(JSON.parse(text));
+            } catch {
+                context.addIssue({
+                    code: 'custom',
+                    message: 'Invalid repeat template.',
+                });
+            }
+        }),
+        anchor_date: z.string().refine(isCalendarDate),
+        last_date: z.string().refine(isCalendarDate),
+        last_todo_id: id,
+        active: z.union([z.literal(0), z.literal(1)]),
+        excluded_dates: z.string().superRefine((text, context) => {
+            try {
+                z.array(z.string().refine(isCalendarDate))
+                    .max(50000)
+                    .parse(JSON.parse(text));
+            } catch {
+                context.addIssue({
+                    code: 'custom',
+                    message: 'Invalid skipped repeat dates.',
+                });
+            }
+        }),
+        updated_at: timestamp,
+    })
+    .strict();
+
 export const backupSchema = z
     .object({
         format: z.literal('todoapp-backup'),
-        version: z.union([z.literal(1), z.literal(2)]),
+        version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
         exportedAt: timestamp,
         todoTypes: z.array(typeSchema).max(10000),
         categories: z.array(categorySchema).max(10000),
         todos: z.array(rowSchema).max(50000),
+        series: z.array(seriesSchema).max(50000).default([]),
     })
     .strict()
     .superRefine((backup, context) => {
@@ -79,6 +114,21 @@ export const backupSchema = z
             new Set(values).size === values.length;
         const types = new Set(backup.todoTypes.map((row) => row.id));
         const categories = new Set(backup.categories.map((row) => row.id));
+        const seriesIds = new Set(backup.series.map((row) => row.id));
+        const invalidSeries = backup.series.some((row) => {
+            try {
+                const template = todoSchema.parse(JSON.parse(row.template));
+                return (
+                    !types.has(template.typeId) ||
+                    (template.categoryId !== null &&
+                        !categories.has(template.categoryId)) ||
+                    (row.active === 1 &&
+                        (!template.recurrenceFrequency || !template.dueDate))
+                );
+            } catch {
+                return true;
+            }
+        });
         // Check ancestry iteratively so a malformed long chain cannot overflow the stack.
         const parents = new Map(
             backup.todos.map((row) => [row.id, row.recurrence_source_id]),
@@ -100,6 +150,13 @@ export const backupSchema = z
         }
         if (
             cycle ||
+            invalidSeries ||
+            !unique(backup.series.map((row) => row.id)) ||
+            backup.todos.some(
+                (row) =>
+                    row.recurrence_series_id !== null &&
+                    !seriesIds.has(row.recurrence_series_id),
+            ) ||
             !unique(backup.todos.map((row) => row.id)) ||
             !unique(backup.todoTypes.map((row) => row.id)) ||
             !unique(backup.todoTypes.map((row) => row.name)) ||
@@ -134,7 +191,8 @@ export function validateBackup(value: unknown): TodoBackup {
         value.format === 'todoapp-backup' &&
         'version' in value &&
         value.version !== 1 &&
-        value.version !== 2
+        value.version !== 2 &&
+        value.version !== 3
     ) {
         throw new Error(
             'This backup uses a different format version. Update TodoApp before restoring it.',

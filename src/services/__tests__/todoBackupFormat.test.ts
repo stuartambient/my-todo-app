@@ -44,12 +44,19 @@ export const fixture = {
 test('round trip preserves raw recurrence anchors, midnight and notes including a UTF-8 BOM', () => {
     expect(parseBackup('\uFEFF' + JSON.stringify(fixture))).toEqual({
         ...fixture,
-        todos: [{ ...fixture.todos[0], recurrence_end_date: null }],
+        series: [],
+        todos: [
+            {
+                ...fixture.todos[0],
+                recurrence_end_date: null,
+                recurrence_series_id: null,
+            },
+        ],
     });
 });
 test('rejects invalid JSON and newer versions clearly', () => {
     expect(() => parseBackup('{')).toThrow('not valid JSON');
-    expect(() => validateBackup({ ...fixture, version: 3 })).toThrow(
+    expect(() => validateBackup({ ...fixture, version: 4 })).toThrow(
         'different format version',
     );
 });
@@ -140,7 +147,11 @@ test('new backups preserve optional repeat end dates and reject invalid limits',
         version: 2,
         todos: [{ ...fixture.todos[0], recurrence_end_date: '2030-03-31' }],
     };
-    expect(parseBackup(JSON.stringify(backup))).toEqual(backup);
+    expect(parseBackup(JSON.stringify(backup))).toEqual({
+        ...backup,
+        series: [],
+        todos: [{ ...backup.todos[0], recurrence_series_id: null }],
+    });
     for (const recurrence_end_date of ['2030-02-30', '2030-01-30']) {
         expect(() =>
             validateBackup({

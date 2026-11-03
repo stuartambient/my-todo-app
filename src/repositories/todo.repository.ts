@@ -11,7 +11,15 @@ import {
     requestTodoReminderPermission,
     type ReminderTodo,
 } from '@/services/todoReminders';
-import { getNextOccurrenceDate, shiftReminder } from '@/utils/recurrence';
+import { localDateKey, shiftReminder } from '@/utils/recurrence';
+import {
+    adoptLegacySeries,
+    advanceSeries,
+    createSeries,
+    lockSeries,
+    lookaheadDate,
+    type SeriesRow,
+} from './recurrenceSeries';
 import { notifyTodoChanged } from '@/services/todoChanges';
 import { maintainDeliveryHistory } from '@/services/reminderDeliveryHistory';
 import { SNOOZE_MINUTES } from '@/services/reminderNotificationConstants';
@@ -34,6 +42,8 @@ export async function synchronizeSavedReminders(
 ): Promise<void> {
     try {
         const database = await getDatabase();
+        const generated = await materializeOccurrences(database);
+        if (generated) notifyTodoChanged('recurrences-generated');
         if (requestPermission) {
             try {
                 await requestTodoReminderPermission();
@@ -91,15 +101,16 @@ async function insertTodo(
     now: string,
     anchorDate: string | null,
     sourceId: string | null = null,
+    seriesId: string | null = null,
 ): Promise<string> {
     const id = Crypto.randomUUID();
     await database.runAsync(
         `INSERT INTO todos (
             id, type_id, category_id, subject, notes, status, priority,
             due_date, due_time, reminder_at, recurrence_frequency, recurrence_interval,
-            recurrence_basis, recurrence_end_date, recurrence_anchor_date, recurrence_source_id,
+            recurrence_basis, recurrence_end_date, recurrence_anchor_date, recurrence_source_id, recurrence_series_id,
             created_at, updated_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
         id,
         input.typeId,
         input.categoryId,
@@ -115,10 +126,46 @@ async function insertTodo(
         input.recurrenceEndDate,
         anchorDate,
         sourceId,
+        seriesId,
         now,
         now,
     );
     return id;
+}
+
+async function materializeOccurrences(
+    database: SQLiteDatabase,
+    now = new Date(),
+): Promise<number> {
+    let added = 0;
+    await database.withExclusiveTransactionAsync(async (tx) => {
+        await lockSeries(tx);
+        await adoptLegacySeries(tx);
+        const series = await tx.getAllAsync<SeriesRow>(
+            'SELECT * FROM todo_recurrence_series WHERE active = 1',
+        );
+        for (const entry of series) {
+            const template = todoSchema.parse(JSON.parse(entry.template));
+            if (template.recurrenceBasis === 'due_date') {
+                added += await advanceSeries(
+                    tx,
+                    entry,
+                    insertTodo,
+                    lookaheadDate(now),
+                    now,
+                );
+            }
+        }
+    });
+    return added;
+}
+
+export function refreshRecurringTodos(): Promise<void> {
+    return enqueueWrite(async () => {
+        const database = await getDatabase();
+        if (await materializeOccurrences(database))
+            await synchronizeSavedReminders();
+    });
 }
 
 export async function getTodoById(id: string): Promise<Todo | null> {
@@ -131,6 +178,7 @@ export async function getTodoById(id: string): Promise<Todo | null> {
 }
 
 export async function getOpenTodos(): Promise<Todo[]> {
+    await refreshRecurringTodos();
     const database = await getDatabase();
     const rows = await database.getAllAsync<TodoRow>(`
         SELECT * FROM todos
@@ -158,12 +206,18 @@ export function createTodo(input: CreateTodoInput): Promise<Todo> {
     return enqueueWrite(async () => {
         const values = todoSchema.parse(input);
         const database = await getDatabase();
-        const id = await insertTodo(
-            database,
-            values,
-            new Date().toISOString(),
-            values.recurrenceFrequency ? values.dueDate : null,
-        );
+        let id = '';
+        await database.withExclusiveTransactionAsync(async (tx) => {
+            await lockSeries(tx);
+            const now = new Date().toISOString();
+            id = await insertTodo(
+                tx,
+                values,
+                now,
+                values.recurrenceFrequency ? values.dueDate : null,
+            );
+            await createSeries(tx, id, values, now);
+        });
         const todo = await getTodoById(id);
         if (!todo) throw new Error('Failed to create todo.');
         await synchronizeSavedReminders(
@@ -175,50 +229,167 @@ export function createTodo(input: CreateTodoInput): Promise<Todo> {
     });
 }
 
-export function updateTodo(id: string, input: UpdateTodoInput): Promise<void> {
-    return enqueueWrite(async () => {
-        const values = todoSchema.parse(input);
-        const database = await getDatabase();
-        const current = await database.getFirstAsync<TodoRow>(
-            'SELECT * FROM todos WHERE id = ?',
-            id,
-        );
-        if (!current) throw new Error('Todo not found.');
-
-        const sameSchedule =
-            current.due_date === values.dueDate &&
-            current.recurrence_frequency === values.recurrenceFrequency &&
-            current.recurrence_interval === values.recurrenceInterval &&
-            current.recurrence_basis === values.recurrenceBasis;
-        const anchorDate = values.recurrenceFrequency
-            ? sameSchedule
-                ? (current.recurrence_anchor_date ?? values.dueDate)
-                : values.dueDate
-            : null;
-
-        await database.runAsync(
-            `UPDATE todos SET
+async function updateOccurrence(
+    tx: SQLiteDatabase,
+    id: string,
+    values: UpdateTodoInput,
+    anchorDate: string | null,
+) {
+    await tx.runAsync(
+        `UPDATE todos SET
                 type_id = ?, category_id = ?, subject = ?, notes = ?, priority = ?,
                 due_date = ?, due_time = ?, reminder_at = ?, recurrence_frequency = ?,
                 recurrence_interval = ?, recurrence_basis = ?, recurrence_end_date = ?,
                 recurrence_anchor_date = ?, updated_at = ?
             WHERE id = ?`,
-            values.typeId,
-            values.categoryId,
-            values.subject,
-            values.notes,
-            values.priority === 'high' ? 1 : 0,
-            values.dueDate,
-            values.dueTime,
-            values.reminderAt,
-            values.recurrenceFrequency,
-            values.recurrenceInterval,
-            values.recurrenceBasis,
-            values.recurrenceEndDate,
-            anchorDate,
-            new Date().toISOString(),
-            id,
-        );
+        values.typeId,
+        values.categoryId,
+        values.subject,
+        values.notes,
+        values.priority === 'high' ? 1 : 0,
+        values.dueDate,
+        values.dueTime,
+        values.reminderAt,
+        values.recurrenceFrequency,
+        values.recurrenceInterval,
+        values.recurrenceBasis,
+        values.recurrenceEndDate,
+        anchorDate,
+        new Date().toISOString(),
+        id,
+    );
+}
+
+export function updateTodo(id: string, input: UpdateTodoInput): Promise<void> {
+    return enqueueWrite(async () => {
+        const values = todoSchema.parse(input);
+        const database = await getDatabase();
+        await database.withExclusiveTransactionAsync(async (tx) => {
+            await lockSeries(tx);
+            await adoptLegacySeries(tx);
+            const current = await tx.getFirstAsync<TodoRow>(
+                'SELECT * FROM todos WHERE id = ?',
+                id,
+            );
+            if (!current) throw new Error('Todo not found.');
+
+            const sameSchedule =
+                current.due_date === values.dueDate &&
+                current.recurrence_frequency === values.recurrenceFrequency &&
+                current.recurrence_interval === values.recurrenceInterval &&
+                current.recurrence_basis === values.recurrenceBasis;
+            const anchorDate = values.recurrenceFrequency
+                ? sameSchedule
+                    ? (current.recurrence_anchor_date ?? values.dueDate)
+                    : values.dueDate
+                : null;
+
+            await updateOccurrence(tx, id, values, anchorDate);
+
+            const seriesId = current.recurrence_series_id;
+            if (seriesId && current.status === 'open') {
+                const series = await tx.getFirstAsync<SeriesRow>(
+                    'SELECT * FROM todo_recurrence_series WHERE id = ?',
+                    seriesId,
+                );
+                if (series?.active) {
+                    // Saving an open occurrence updates its upcoming schedule;
+                    // keep earlier open/overdue occurrences and all history.
+                    const today = localDateKey(new Date());
+                    const cutoff =
+                        current.due_date && current.due_date > today
+                            ? current.due_date
+                            : today;
+                    if (!sameSchedule) {
+                        await tx.runAsync(
+                            "DELETE FROM todos WHERE recurrence_series_id = ? AND status = 'open' AND due_date >= ? AND id <> ?",
+                            seriesId,
+                            cutoff,
+                            id,
+                        );
+                    } else {
+                        const future = await tx.getAllAsync<TodoRow>(
+                            "SELECT * FROM todos WHERE recurrence_series_id = ? AND status = 'open' AND due_date >= ? AND id <> ?",
+                            seriesId,
+                            cutoff,
+                            id,
+                        );
+                        const previous = todoSchema.parse(mapTodoRow(current));
+                        for (const row of future) {
+                            if (
+                                values.recurrenceEndDate &&
+                                row.due_date! > values.recurrenceEndDate
+                            ) {
+                                await tx.runAsync(
+                                    'DELETE FROM todos WHERE id = ?',
+                                    row.id,
+                                );
+                                continue;
+                            }
+                            const next = todoSchema.parse(mapTodoRow(row));
+                            // Keep stable occurrence IDs and preserve independently
+                            // snoozed reminders when their schedule was not edited.
+                            for (const field of Object.keys(
+                                values,
+                            ) as (keyof UpdateTodoInput)[]) {
+                                if (
+                                    field === 'dueDate' ||
+                                    field === 'reminderAt'
+                                )
+                                    continue;
+                                if (values[field] !== previous[field])
+                                    Object.assign(next, {
+                                        [field]: values[field],
+                                    });
+                            }
+                            if (values.reminderAt !== previous.reminderAt) {
+                                next.reminderAt = shiftReminder(
+                                    values.reminderAt,
+                                    values.dueDate!,
+                                    row.due_date!,
+                                );
+                            }
+                            await updateOccurrence(
+                                tx,
+                                row.id,
+                                todoSchema.parse(next),
+                                row.recurrence_anchor_date,
+                            );
+                        }
+                    }
+                    const keepCompletionCursor =
+                        values.recurrenceBasis === 'completion_date' &&
+                        sameSchedule &&
+                        series.last_todo_id !== id &&
+                        Boolean(
+                            await tx.getFirstAsync<{ id: string }>(
+                                "SELECT id FROM todos WHERE id = ? AND status = 'open'",
+                                series.last_todo_id,
+                            ),
+                        );
+                    await tx.runAsync(
+                        'UPDATE todo_recurrence_series SET template = ?, anchor_date = ?, last_date = ?, last_todo_id = ?, active = ?, updated_at = ? WHERE id = ?',
+                        JSON.stringify(values),
+                        anchorDate ?? series.anchor_date,
+                        keepCompletionCursor
+                            ? series.last_date
+                            : (values.dueDate ?? series.last_date),
+                        keepCompletionCursor ? series.last_todo_id : id,
+                        values.recurrenceFrequency ? 1 : 0,
+                        new Date().toISOString(),
+                        seriesId,
+                    );
+                }
+            } else if (!seriesId && values.recurrenceFrequency) {
+                await createSeries(tx, id, values, new Date().toISOString());
+            }
+            if (!values.recurrenceFrequency && seriesId) {
+                await tx.runAsync(
+                    'UPDATE todos SET recurrence_series_id = NULL WHERE id = ?',
+                    id,
+                );
+            }
+        });
         await synchronizeSavedReminders(
             Boolean(
                 values.reminderAt && Date.parse(values.reminderAt) > Date.now(),
@@ -247,63 +418,40 @@ async function completeTodoInTransaction(
     const now = completedAt.toISOString();
     const todo = mapTodoRow(row);
 
-    const isFinalOccurrence = Boolean(
-        todo.recurrenceEndDate &&
-        todo.dueDate &&
-        todo.dueDate >= todo.recurrenceEndDate,
+    if (todo.recurrenceFrequency && !todo.dueDate)
+        throw new Error(
+            'Choose a due date before completing this repeating todo.',
+        );
+    if (todo.recurrenceFrequency && !todo.recurrenceInterval)
+        throw new Error(
+            'Choose a repeat interval before completing this todo.',
+        );
+    await adoptLegacySeries(transaction);
+    const member = await transaction.getFirstAsync<TodoRow>(
+        'SELECT * FROM todos WHERE id = ?',
+        id,
     );
-    if (todo.recurrenceFrequency && !isFinalOccurrence) {
-        const successor = await transaction.getFirstAsync<{
-            id: string;
-        }>('SELECT id FROM todos WHERE recurrence_source_id = ?', id);
-
-        // Reopened occurrences keep their existing successor.
-        if (!successor) {
-            if (!todo.dueDate) {
-                throw new Error(
-                    'Choose a due date before completing this repeating todo.',
-                );
-            }
-            if (!todo.recurrenceInterval) {
-                throw new Error(
-                    'Choose a repeat interval before completing this todo.',
-                );
-            }
-
-            const basis = todo.recurrenceBasis ?? 'due_date';
-            const nextDate = getNextOccurrenceDate({
-                dueDate: todo.dueDate,
-                frequency: todo.recurrenceFrequency,
-                interval: todo.recurrenceInterval,
-                basis,
-                anchorDate: row.recurrence_anchor_date,
-                completedAt,
-            });
-            // Calendar date comparison is inclusive. Completing a final or
-            // overdue occurrence never creates a successor beyond the limit.
-            if (!todo.recurrenceEndDate || nextDate <= todo.recurrenceEndDate) {
-                const nextValues = todoSchema.parse({
-                    ...todo,
-                    dueDate: nextDate,
-                    reminderAt: shiftReminder(
-                        todo.reminderAt,
-                        todo.dueDate,
-                        nextDate,
-                    ),
-                    recurrenceBasis: basis,
-                });
-
-                await insertTodo(
-                    transaction,
-                    nextValues,
-                    now,
-                    basis === 'due_date'
-                        ? (row.recurrence_anchor_date ?? todo.dueDate)
-                        : nextDate,
-                    id,
-                );
-            }
-        }
+    const series = member?.recurrence_series_id
+        ? await transaction.getFirstAsync<SeriesRow>(
+              'SELECT * FROM todo_recurrence_series WHERE id = ?',
+              member.recurrence_series_id,
+          )
+        : null;
+    if (
+        todo.recurrenceFrequency &&
+        series?.active &&
+        series.last_todo_id === id
+    ) {
+        // Completing an older occurrence must not fork a series whose future
+        // already exists. Calendar repeats advance without skipping missed dates.
+        await advanceSeries(
+            transaction,
+            series,
+            insertTodo,
+            '9999-12-31',
+            completedAt,
+            true,
+        );
     }
 
     await transaction.runAsync(
@@ -404,10 +552,74 @@ export function reopenTodo(id: string): Promise<void> {
     });
 }
 
-export function deleteTodo(id: string): Promise<void> {
+export type DeleteTodoScope = 'occurrence' | 'series';
+
+export function deleteTodo(
+    id: string,
+    scope: DeleteTodoScope = 'occurrence',
+): Promise<void> {
     return enqueueWrite(async () => {
         const database = await getDatabase();
-        await database.runAsync('DELETE FROM todos WHERE id = ?', id);
+        await database.withExclusiveTransactionAsync(async (tx) => {
+            await lockSeries(tx);
+            await adoptLegacySeries(tx);
+            const row = await tx.getFirstAsync<TodoRow>(
+                'SELECT * FROM todos WHERE id = ?',
+                id,
+            );
+            if (!row) return;
+            const series = row.recurrence_series_id
+                ? await tx.getFirstAsync<SeriesRow>(
+                      'SELECT * FROM todo_recurrence_series WHERE id = ?',
+                      row.recurrence_series_id,
+                  )
+                : null;
+            if (series && scope === 'series') {
+                await tx.runAsync(
+                    'UPDATE todo_recurrence_series SET active = 0, updated_at = ? WHERE id = ?',
+                    new Date().toISOString(),
+                    series.id,
+                );
+                await tx.runAsync(
+                    "DELETE FROM todos WHERE recurrence_series_id = ? AND status = 'open'",
+                    series.id,
+                );
+            } else {
+                if (series && row.due_date) {
+                    const excluded = new Set<string>(
+                        JSON.parse(series.excluded_dates),
+                    );
+                    excluded.add(row.due_date);
+                    await tx.runAsync(
+                        'UPDATE todo_recurrence_series SET excluded_dates = ?, updated_at = ? WHERE id = ?',
+                        JSON.stringify([...excluded].sort()),
+                        new Date().toISOString(),
+                        series.id,
+                    );
+                    // A completion-based series otherwise has no running
+                    // occurrence after skipping its current leaf.
+                    if (
+                        series.active &&
+                        series.last_todo_id === id &&
+                        row.status === 'open'
+                    ) {
+                        await advanceSeries(
+                            tx,
+                            {
+                                ...series,
+                                excluded_dates: JSON.stringify([...excluded]),
+                            },
+                            insertTodo,
+                            '9999-12-31',
+                            new Date(),
+                            true,
+                        );
+                    }
+                }
+                await tx.runAsync('DELETE FROM todos WHERE id = ?', id);
+            }
+        });
         await synchronizeSavedReminders();
+        notifyTodoChanged(id);
     });
 }

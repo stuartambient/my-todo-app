@@ -27,6 +27,7 @@ export type Todo = {
     recurrenceInterval: number | null;
     recurrenceBasis: RecurrenceBasis | null;
     recurrenceEndDate: string | null;
+    recurrenceSeriesId: string | null;
 
     createdAt: string;
     updatedAt: string;

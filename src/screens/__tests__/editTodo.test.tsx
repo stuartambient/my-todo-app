@@ -65,6 +65,7 @@ const saved: Todo = {
     recurrenceInterval: null,
     recurrenceBasis: null,
     recurrenceEndDate: null,
+    recurrenceSeriesId: null,
     createdAt: '2030-06-01T12:00:00Z',
     updatedAt: '2030-06-01T12:00:00Z',
     completedAt: null,
@@ -166,4 +167,53 @@ test('a resume refresh cannot overwrite unsaved input with newer database values
     });
     expect(getTodoById).toHaveBeenCalledTimes(2);
     expect(screen.getByLabelText('Subject').props.value).toBe('Unsaved draft');
+});
+
+test('repeat deletion offers occurrence and series choices; Cancel keeps the draft', async () => {
+    jest.mocked(getTodoById).mockResolvedValue({
+        ...saved,
+        recurrenceFrequency: 'day',
+        recurrenceInterval: 1,
+        recurrenceBasis: 'due_date',
+        recurrenceSeriesId: 'series',
+    });
+    await edit();
+    await fireEvent.press(screen.getByText('Delete Todo'));
+    expect(
+        jest
+            .mocked(Alert.alert)
+            .mock.calls.at(-1)![2]!
+            .map((button) => button.text),
+    ).toEqual(['Cancel', 'Delete this occurrence', 'Delete entire series']);
+    expect(jest.mocked(Alert.alert).mock.calls.at(-1)![1]).toContain(
+        'Completed history is kept',
+    );
+    await pressAlert('Cancel');
+    expect(deleteTodo).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Subject').props.value).toBe('Unsaved draft');
+    await fireEvent.press(screen.getByText('Delete Todo'));
+    await pressAlert('Delete this occurrence');
+    expect(deleteTodo).toHaveBeenCalledWith('one', 'occurrence');
+    expect(router.back).toHaveBeenCalledTimes(1);
+});
+
+test('a failed entire-series deletion keeps edits protected; retry uses the series scope', async () => {
+    jest.mocked(getTodoById).mockResolvedValue({
+        ...saved,
+        recurrenceFrequency: 'day',
+        recurrenceInterval: 1,
+        recurrenceBasis: 'due_date',
+        recurrenceSeriesId: 'series',
+    });
+    jest.mocked(deleteTodo).mockRejectedValueOnce(new Error('Delete failed'));
+    await edit();
+    await fireEvent.press(screen.getByText('Delete Todo'));
+    await pressAlert('Delete entire series');
+    expect(deleteTodo).toHaveBeenCalledWith('one', 'series');
+    expect(router.back).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Subject').props.value).toBe('Unsaved draft');
+    expect(jest.mocked(usePreventRemove).mock.calls.at(-1)![0]).toBe(true);
+    await fireEvent.press(screen.getByText('Delete Todo'));
+    await pressAlert('Delete entire series');
+    expect(router.back).toHaveBeenCalledTimes(1);
 });

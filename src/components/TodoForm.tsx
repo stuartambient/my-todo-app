@@ -763,8 +763,17 @@ export function TodoForm({
                                 <Text style={styles.helperText}>
                                     {recurrenceBasis === 'completion_date'
                                         ? 'The interval starts on the day you complete this todo.'
-                                        : 'Keeps the original schedule. If dates are missed, the next occurrence is in the future.'}
+                                        : 'Follows the calendar. Each occurrence is created even if earlier ones are unfinished.'}
                                 </Text>
+
+                                {!quickEntry && (
+                                    <Text style={styles.helperText}>
+                                        Changes to this open occurrence also
+                                        update upcoming occurrences. Earlier
+                                        overdue todos and completed history are
+                                        kept.
+                                    </Text>
+                                )}
 
                                 <Text style={styles.label}>
                                     Ends on (optional)

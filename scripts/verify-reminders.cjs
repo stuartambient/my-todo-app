@@ -950,9 +950,14 @@ async function main() {
             );
         },
     );
+    const overdueCount = database.db
+        .prepare(
+            'SELECT COUNT(*) AS n FROM todos WHERE recurrence_series_id = ?',
+        )
+        .get(overdue.recurrenceSeriesId).n;
     await repository.completeTodo(overdue.id);
     check(
-        'completing an overdue series after its limit creates no new todo',
+        'completing an overdue series preserves the previously generated missed occurrences',
         () => {
             assert.equal(
                 database.db
@@ -960,9 +965,17 @@ async function main() {
                         'SELECT COUNT(*) AS n FROM todos WHERE recurrence_source_id = ?',
                     )
                     .get(overdue.id).n,
-                0,
+                1,
             );
         },
+    );
+    assert.equal(
+        database.db
+            .prepare(
+                'SELECT COUNT(*) AS n FROM todos WHERE recurrence_series_id = ?',
+            )
+            .get(overdue.recurrenceSeriesId).n,
+        overdueCount,
     );
     const updated = await repository.createTodo({
         ...values,

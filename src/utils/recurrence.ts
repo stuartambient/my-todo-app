@@ -81,6 +81,7 @@ type NextOccurrenceInput = {
     basis: RecurrenceBasis;
     anchorDate?: string | null;
     completedAt?: Date;
+    skipMissed?: boolean;
 };
 
 export function getNextOccurrenceDate({
@@ -90,6 +91,7 @@ export function getNextOccurrenceDate({
     basis,
     anchorDate,
     completedAt = new Date(),
+    skipMissed = true,
 }: NextOccurrenceInput): string {
     if (!Number.isSafeInteger(interval) || interval < 1) {
         throw new Error('Repeat interval must be a positive whole number.');
@@ -104,7 +106,7 @@ export function getNextOccurrenceDate({
     const anchor = anchorDate ?? dueDate;
     const start = parseDate(anchor);
     // Always advance past the completed occurrence and past today.
-    const threshold = dueDate > today ? dueDate : today;
+    const threshold = !skipMissed || dueDate > today ? dueDate : today;
     const end = parseDate(threshold);
 
     let elapsed: number;
