@@ -1,3 +1,4 @@
+import { parseISO } from 'date-fns';
 import {
     router,
     Stack,
@@ -19,6 +20,7 @@ import {
     View,
 } from 'react-native';
 
+import { CustomDateRange, type DateRange } from '@/components/CustomDateRange';
 import { HomeViewMenu } from '@/components/HomeViewMenu';
 import { ReminderNotice } from '@/components/ReminderNotice';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
@@ -32,8 +34,8 @@ import { localDateKey } from '@/utils/recurrence';
 const dateRanges = [
     { label: 'All open', daysAhead: null },
     { label: 'Today', daysAhead: 0 },
-    { label: 'Next 7 days', daysAhead: 7 },
-    { label: 'Next 30 days', daysAhead: 30 },
+    { label: 'Next 7 days', daysAhead: 6 },
+    { label: 'Next 30 days', daysAhead: 29 },
 ] as const;
 
 type DaysAhead = (typeof dateRanges)[number]['daysAhead'];
@@ -80,6 +82,8 @@ export default function HomeScreen() {
     const [status, setStatus] = useState<TodoStatus>('open');
     const [search, setSearch] = useState('');
     const [daysAhead, setDaysAhead] = useState<DaysAhead>(null);
+    const [customRange, setCustomRange] = useState<DateRange | null>(null);
+    const [editingRange, setEditingRange] = useState(false);
     const openingScreen = useRef(false);
 
     const { todos, loading, error, refresh, complete } = useTodos(status);
@@ -92,18 +96,29 @@ export default function HomeScreen() {
     if (daysAhead !== null) {
         rangeEnd.setDate(rangeEnd.getDate() + daysAhead);
     }
-    const lastVisibleDate =
-        showingCompleted || daysAhead === null ? null : localDateKey(rangeEnd);
+    const firstVisibleDate =
+        !showingCompleted && customRange ? customRange.from : null;
+    const lastVisibleDate = showingCompleted
+        ? null
+        : customRange
+          ? customRange.through
+          : daysAhead !== null
+            ? localDateKey(rangeEnd)
+            : null;
 
     const visibleTodos = useMemo(() => {
         if (!lastVisibleDate && !searching) return todos;
 
         return todos.filter((todo) => {
-            if (
-                lastVisibleDate &&
-                (!todo.dueDate || getDateKey(todo.dueDate) > lastVisibleDate)
-            ) {
-                return false;
+            if (lastVisibleDate) {
+                if (!todo.dueDate) return false;
+                const due = getDateKey(todo.dueDate);
+                if (
+                    due > lastVisibleDate ||
+                    (firstVisibleDate && due < firstVisibleDate)
+                ) {
+                    return false;
+                }
             }
 
             return (
@@ -112,7 +127,7 @@ export default function HomeScreen() {
                 todo.notes?.toLowerCase().includes(searchTerm)
             );
         });
-    }, [todos, lastVisibleDate, searching, searchTerm]);
+    }, [todos, firstVisibleDate, lastVisibleDate, searching, searchTerm]);
 
     const sections = useMemo<TodoSection[]>(() => {
         // Preserve the existing completed-list order without headings.
@@ -179,6 +194,8 @@ export default function HomeScreen() {
                 setStatus('open');
                 setSearch('');
                 setDaysAhead(null);
+                setCustomRange(null);
+                setEditingRange(false);
             }
             void refresh();
             void refreshTypes();
@@ -317,7 +334,10 @@ export default function HomeScreen() {
                         ? undefined
                         : () => (
                               <HomeViewMenu
-                                  onViewCompleted={() => setStatus('completed')}
+                                  onViewCompleted={() => {
+                                      setEditingRange(false);
+                                      setStatus('completed');
+                                  }}
                               />
                           ),
                     headerLeft: showingCompleted
@@ -370,7 +390,8 @@ export default function HomeScreen() {
             {!showingCompleted && (
                 <View style={styles.dateRanges} accessibilityRole="radiogroup">
                     {dateRanges.map((range) => {
-                        const selected = daysAhead === range.daysAhead;
+                        const selected =
+                            !customRange && daysAhead === range.daysAhead;
                         return (
                             <Pressable
                                 key={range.label}
@@ -380,7 +401,11 @@ export default function HomeScreen() {
                                 ]}
                                 accessibilityRole="radio"
                                 accessibilityState={{ checked: selected }}
-                                onPress={() => setDaysAhead(range.daysAhead)}
+                                onPress={() => {
+                                    setDaysAhead(range.daysAhead);
+                                    setCustomRange(null);
+                                    setEditingRange(false);
+                                }}
                             >
                                 <Text
                                     style={[
@@ -394,7 +419,46 @@ export default function HomeScreen() {
                             </Pressable>
                         );
                     })}
+                    <Pressable
+                        style={[
+                            styles.dateRange,
+                            customRange && styles.dateRangeSelected,
+                        ]}
+                        accessibilityRole="radio"
+                        accessibilityState={{
+                            checked: Boolean(customRange),
+                            expanded: editingRange,
+                        }}
+                        onPress={() => setEditingRange(!editingRange)}
+                    >
+                        <Text
+                            style={[
+                                styles.dateRangeLabel,
+                                customRange && styles.dateRangeLabelSelected,
+                            ]}
+                        >
+                            Custom…
+                        </Text>
+                    </Pressable>
                 </View>
+            )}
+
+            {!showingCompleted && customRange && !editingRange && (
+                <Text style={styles.rangeSummary}>
+                    {parseISO(customRange.from).toLocaleDateString()} –{' '}
+                    {parseISO(customRange.through).toLocaleDateString()}
+                </Text>
+            )}
+
+            {!showingCompleted && editingRange && (
+                <CustomDateRange
+                    initialRange={customRange}
+                    onCancel={() => setEditingRange(false)}
+                    onApply={(range) => {
+                        setCustomRange(range);
+                        setEditingRange(false);
+                    }}
+                />
             )}
 
             <View style={styles.reminderNoticeContainer}>
@@ -500,6 +564,11 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
 
+    rangeSummary: {
+        marginHorizontal: 16,
+        marginTop: 6,
+        color: '#555555',
+    },
     dateRanges: {
         flexDirection: 'row',
         flexWrap: 'wrap',

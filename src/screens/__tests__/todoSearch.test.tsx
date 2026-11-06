@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, expect, jest, test } from '@jest/globals';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useLocalSearchParams } from 'expo-router';
 import { BackHandler } from 'react-native';
 import HomeScreen from '@/app/index';
 import { useTodos } from '@/hooks/useTodos';
 import type { Todo, TodoStatus } from '@/types/todo';
 import { localDateKey } from '@/utils/recurrence';
+
+jest.mock('@react-native-community/datetimepicker', () => ({
+    DateTimePickerAndroid: { open: jest.fn() },
+}));
 
 jest.mock('expo-router', () => ({
     router: { navigate: jest.fn(), setParams: jest.fn(), push: jest.fn() },
@@ -274,7 +279,7 @@ test('date ranges include overdue and the inclusive cutoff and combine with sear
         return localDateKey(date);
     };
     todos = [
-        ...[-1, 0, 1, 7, 8, 30, 31].map((offset) =>
+        ...[-1, 0, 1, 6, 7, 29, 30].map((offset) =>
             makeTodo({
                 id: String(offset),
                 subject: `Task at ${offset}`,
@@ -294,8 +299,8 @@ test('date ranges include overdue and the inclusive cutoff and combine with sear
         fireEvent.changeText(screen.getByLabelText('Search todos'), query);
     // Search for distant rows so SectionList's initial render window doesn't
     // determine whether the assertions can see them.
-    await search('Task at 31');
-    expect(screen.getByText('Task at 31')).toBeTruthy();
+    await search('Task at 30');
+    expect(screen.getByText('Task at 30')).toBeTruthy();
     await search('Undated task');
     expect(screen.getByText('Undated task')).toBeTruthy();
     await select('Today');
@@ -306,19 +311,19 @@ test('date ranges include overdue and the inclusive cutoff and combine with sear
     expect(screen.queryByText('Task at 1')).toBeNull();
 
     await select('Next 7 days');
+    await search('Task at 6');
+    expect(screen.getByText('Task at 6')).toBeTruthy();
     await search('Task at 7');
-    expect(screen.getByText('Task at 7')).toBeTruthy();
-    await search('Task at 8');
     expect(screen.getByText('No matching todos')).toBeTruthy();
 
     await select('Next 30 days');
-    expect(screen.getByText('Task at 8')).toBeTruthy();
+    expect(screen.getByText('Task at 7')).toBeTruthy();
+    await search('Task at 29');
+    expect(screen.getByText('Task at 29')).toBeTruthy();
     await search('Task at 30');
-    expect(screen.getByText('Task at 30')).toBeTruthy();
-    await search('Task at 31');
     expect(screen.getByText('No matching todos')).toBeTruthy();
     await select('All open');
-    expect(screen.getByText('Task at 31')).toBeTruthy();
+    expect(screen.getByText('Task at 30')).toBeTruthy();
 });
 
 test('Completed ignores the date range and creating a todo reveals it in All open', async () => {
@@ -342,4 +347,59 @@ test('Completed ignores the date range and creating a todo reveals it in All ope
         screen.getByRole('radio', { name: 'All open', checked: true }),
     ).toBeTruthy();
     expect(screen.getByText('Buy groceries')).toBeTruthy();
+});
+
+test('custom dates are inclusive, reject a reversed range, and only apply on confirmation', async () => {
+    todos = [
+        makeTodo({
+            id: 'before',
+            subject: 'Before range',
+            dueDate: '2020-11-06',
+        }),
+        makeTodo({ id: 'first', subject: 'First day', dueDate: '2020-11-07' }),
+        makeTodo({ id: 'last', subject: 'Last day', dueDate: '2020-11-10' }),
+        makeTodo({
+            id: 'after',
+            subject: 'After range',
+            dueDate: '2020-11-11',
+        }),
+        makeTodo({ id: 'undated', subject: 'Undated', dueDate: null }),
+    ];
+    await render(<HomeScreen />);
+    const press = (name: string) =>
+        fireEvent.press(screen.getByRole('button', { name }));
+    const openCustom = () =>
+        fireEvent.press(screen.getByRole('radio', { name: 'Custom…' }));
+    const pick = async (field: string, day: number) => {
+        await press(field);
+        const picker = jest.mocked(DateTimePickerAndroid.open).mock
+            .lastCall![0];
+        await act(() =>
+            picker.onValueChange!({} as never, new Date(2020, 10, day)),
+        );
+    };
+
+    await openCustom();
+    await pick('From', 7);
+    await pick('Through', 6);
+    expect(
+        screen.getByRole('button', { name: 'Apply range', disabled: true }),
+    ).toBeTruthy();
+    expect(screen.getByText('Before range')).toBeTruthy();
+    await pick('Through', 10);
+    await press('Apply range');
+    expect(
+        screen.getByRole('radio', { name: 'Custom…', checked: true }),
+    ).toBeTruthy();
+    expect(screen.getByText('First day')).toBeTruthy();
+    expect(screen.getByText('Last day')).toBeTruthy();
+    expect(screen.queryByText('Before range')).toBeNull();
+    expect(screen.queryByText('After range')).toBeNull();
+    expect(screen.queryByText('Undated')).toBeNull();
+
+    await openCustom();
+    await pick('From', 10);
+    await press('Cancel');
+    expect(screen.getByText('First day')).toBeTruthy();
+    expect(screen.getByText('Last day')).toBeTruthy();
 });
