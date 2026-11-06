@@ -6,6 +6,7 @@ import { BackHandler } from 'react-native';
 import HomeScreen from '@/app/index';
 import { useTodos } from '@/hooks/useTodos';
 import type { Todo, TodoStatus } from '@/types/todo';
+import { localDateKey } from '@/utils/recurrence';
 
 jest.mock('expo-router', () => ({
     router: { navigate: jest.fn(), setParams: jest.fn(), push: jest.fn() },
@@ -264,4 +265,81 @@ test('countdowns explain Due in while overdue labels stay unambiguous', async ()
     expect(screen.getByText(/^Due in /)).toBeTruthy();
     expect(screen.getByText('Overdue')).toBeTruthy();
     expect(screen.queryByText('Due in Overdue')).toBeNull();
+});
+
+test('date ranges include overdue and the inclusive cutoff and combine with search', async () => {
+    const dateAt = (offset: number) => {
+        const date = new Date();
+        date.setDate(date.getDate() + offset);
+        return localDateKey(date);
+    };
+    todos = [
+        ...[-1, 0, 1, 7, 8, 30, 31].map((offset) =>
+            makeTodo({
+                id: String(offset),
+                subject: `Task at ${offset}`,
+                dueDate: dateAt(offset),
+            }),
+        ),
+        makeTodo({ id: 'undated', subject: 'Undated task', dueDate: null }),
+    ];
+
+    await render(<HomeScreen />);
+    const select = (name: string) =>
+        fireEvent.press(screen.getByRole('radio', { name }));
+    expect(
+        screen.getByRole('radio', { name: 'All open', checked: true }),
+    ).toBeTruthy();
+    const search = (query: string) =>
+        fireEvent.changeText(screen.getByLabelText('Search todos'), query);
+    // Search for distant rows so SectionList's initial render window doesn't
+    // determine whether the assertions can see them.
+    await search('Task at 31');
+    expect(screen.getByText('Task at 31')).toBeTruthy();
+    await search('Undated task');
+    expect(screen.getByText('Undated task')).toBeTruthy();
+    await select('Today');
+    expect(screen.getByText('No matching todos')).toBeTruthy();
+    await search('');
+    expect(screen.getByText('Task at -1')).toBeTruthy();
+    expect(screen.getByText('Task at 0')).toBeTruthy();
+    expect(screen.queryByText('Task at 1')).toBeNull();
+
+    await select('Next 7 days');
+    await search('Task at 7');
+    expect(screen.getByText('Task at 7')).toBeTruthy();
+    await search('Task at 8');
+    expect(screen.getByText('No matching todos')).toBeTruthy();
+
+    await select('Next 30 days');
+    expect(screen.getByText('Task at 8')).toBeTruthy();
+    await search('Task at 30');
+    expect(screen.getByText('Task at 30')).toBeTruthy();
+    await search('Task at 31');
+    expect(screen.getByText('No matching todos')).toBeTruthy();
+    await select('All open');
+    expect(screen.getByText('Task at 31')).toBeTruthy();
+});
+
+test('Completed ignores the date range and creating a todo reveals it in All open', async () => {
+    const { rerender } = await render(<HomeScreen />);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Today' }));
+    expect(screen.queryByText('Buy groceries')).toBeNull();
+    await viewCompleted();
+    expect(screen.getByText('Pay rent')).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: 'Today' })).toBeNull();
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Back to open todos' }),
+    );
+    expect(
+        screen.getByRole('radio', { name: 'Today', checked: true }),
+    ).toBeTruthy();
+    jest.mocked(useLocalSearchParams).mockReturnValue({
+        createdTodoId: 'three',
+    });
+    await rerender(<HomeScreen />);
+    expect(
+        screen.getByRole('radio', { name: 'All open', checked: true }),
+    ).toBeTruthy();
+    expect(screen.getByText('Buy groceries')).toBeTruthy();
 });

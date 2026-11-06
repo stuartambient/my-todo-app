@@ -27,6 +27,16 @@ import { useRevealTodo } from '@/hooks/useRevealTodo';
 import { useMinuteTick } from '@/hooks/useMinuteTick';
 import type { Todo, TodoStatus } from '@/types/todo';
 import { formatDueTime, getDueTime } from '@/utils/dueTime';
+import { localDateKey } from '@/utils/recurrence';
+
+const dateRanges = [
+    { label: 'All open', daysAhead: null },
+    { label: 'Today', daysAhead: 0 },
+    { label: 'Next 7 days', daysAhead: 7 },
+    { label: 'Next 30 days', daysAhead: 30 },
+] as const;
+
+type DaysAhead = (typeof dateRanges)[number]['daysAhead'];
 
 type TodoSection = {
     key: string;
@@ -69,6 +79,7 @@ export default function HomeScreen() {
     const handledCreatedTodo = useRef<string | undefined>(undefined);
     const [status, setStatus] = useState<TodoStatus>('open');
     const [search, setSearch] = useState('');
+    const [daysAhead, setDaysAhead] = useState<DaysAhead>(null);
     const openingScreen = useRef(false);
 
     const { todos, loading, error, refresh, complete } = useTodos(status);
@@ -77,17 +88,31 @@ export default function HomeScreen() {
     const showingCompleted = status === 'completed';
     const searchTerm = search.trim().toLowerCase();
     const searching = searchTerm.length > 0;
-    const visibleTodos = useMemo(
-        () =>
-            searching
-                ? todos.filter(
-                      (todo) =>
-                          todo.subject.toLowerCase().includes(searchTerm) ||
-                          todo.notes?.toLowerCase().includes(searchTerm),
-                  )
-                : todos,
-        [todos, searching, searchTerm],
-    );
+    const rangeEnd = new Date();
+    if (daysAhead !== null) {
+        rangeEnd.setDate(rangeEnd.getDate() + daysAhead);
+    }
+    const lastVisibleDate =
+        showingCompleted || daysAhead === null ? null : localDateKey(rangeEnd);
+
+    const visibleTodos = useMemo(() => {
+        if (!lastVisibleDate && !searching) return todos;
+
+        return todos.filter((todo) => {
+            if (
+                lastVisibleDate &&
+                (!todo.dueDate || getDateKey(todo.dueDate) > lastVisibleDate)
+            ) {
+                return false;
+            }
+
+            return (
+                !searching ||
+                todo.subject.toLowerCase().includes(searchTerm) ||
+                todo.notes?.toLowerCase().includes(searchTerm)
+            );
+        });
+    }, [todos, lastVisibleDate, searching, searchTerm]);
 
     const sections = useMemo<TodoSection[]>(() => {
         // Preserve the existing completed-list order without headings.
@@ -153,6 +178,7 @@ export default function HomeScreen() {
                 handledCreatedTodo.current = createdTodoId;
                 setStatus('open');
                 setSearch('');
+                setDaysAhead(null);
             }
             void refresh();
             void refreshTypes();
@@ -341,6 +367,36 @@ export default function HomeScreen() {
                 )}
             </View>
 
+            {!showingCompleted && (
+                <View style={styles.dateRanges} accessibilityRole="radiogroup">
+                    {dateRanges.map((range) => {
+                        const selected = daysAhead === range.daysAhead;
+                        return (
+                            <Pressable
+                                key={range.label}
+                                style={[
+                                    styles.dateRange,
+                                    selected && styles.dateRangeSelected,
+                                ]}
+                                accessibilityRole="radio"
+                                accessibilityState={{ checked: selected }}
+                                onPress={() => setDaysAhead(range.daysAhead)}
+                            >
+                                <Text
+                                    style={[
+                                        styles.dateRangeLabel,
+                                        selected &&
+                                            styles.dateRangeLabelSelected,
+                                    ]}
+                                >
+                                    {range.label}
+                                </Text>
+                            </Pressable>
+                        );
+                    })}
+                </View>
+            )}
+
             <View style={styles.reminderNoticeContainer}>
                 <ReminderNotice />
             </View>
@@ -393,15 +449,21 @@ export default function HomeScreen() {
                                     ? 'No matching todos'
                                     : showingCompleted
                                       ? 'No completed todos'
-                                      : 'No open todos'}
+                                      : lastVisibleDate
+                                        ? 'No todos in this range'
+                                        : 'No open todos'}
                             </Text>
 
                             <Text style={styles.emptyText}>
                                 {searching
-                                    ? `Try different words or clear your search. Searching ${showingCompleted ? 'completed' : 'open'} todos only.`
+                                    ? lastVisibleDate
+                                        ? 'Try different words, clear your search, or choose a wider range.'
+                                        : `Try different words or clear your search. Searching ${showingCompleted ? 'completed' : 'open'} todos only.`
                                     : showingCompleted
                                       ? 'Todos you complete will appear here.'
-                                      : 'Tap + to create a todo.'}
+                                      : lastVisibleDate
+                                        ? 'Choose All open to see todos outside this range or without a due date.'
+                                        : 'Tap + to create a todo.'}
                             </Text>
                         </View>
                     }
@@ -438,6 +500,32 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
 
+    dateRanges: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginHorizontal: 16,
+        marginTop: 8,
+    },
+    dateRange: {
+        minHeight: 44,
+        justifyContent: 'center',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        backgroundColor: '#f3f3f3',
+    },
+    dateRangeSelected: {
+        backgroundColor: '#222222',
+    },
+    dateRangeLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#333333',
+    },
+    dateRangeLabelSelected: {
+        color: '#ffffff',
+    },
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
