@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { homeColors } from '@/theme/homeColors';
 import type { TodoType } from '@/types/todoType';
 
 type Props = {
@@ -154,13 +155,13 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         gap: 12,
         borderWidth: 1,
-        borderColor: '#b8b8b8',
+        borderColor: homeColors.border,
         borderRadius: 8,
-        backgroundColor: '#ffffff',
+        backgroundColor: homeColors.canvas,
     },
     disabled: { opacity: 0.5 },
-    selectedName: { flex: 1, color: '#222222', fontSize: 16 },
-    chevron: { color: '#555555', fontSize: 22 },
+    selectedName: { flex: 1, color: homeColors.text, fontSize: 16 },
+    chevron: { color: homeColors.muted, fontSize: 22 },
     overlay: {
         flex: 1,
         justifyContent: 'center',
@@ -173,10 +174,15 @@ const styles = StyleSheet.create({
         maxHeight: '100%',
         alignSelf: 'center',
         borderRadius: 16,
-        backgroundColor: '#ffffff',
+        backgroundColor: homeColors.surface,
         overflow: 'hidden',
     },
-    title: { padding: 20, color: '#222222', fontSize: 20, fontWeight: '600' },
+    title: {
+        padding: 20,
+        color: homeColors.text,
+        fontSize: 20,
+        fontWeight: '600',
+    },
     choices: { flexGrow: 0, flexShrink: 1 },
     choice: {
         flexDirection: 'row',
@@ -186,17 +192,17 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         gap: 12,
     },
-    selectedChoice: { backgroundColor: '#eeeeee' },
-    choiceName: { flex: 1, color: '#222222', fontSize: 16 },
+    selectedChoice: { backgroundColor: homeColors.accentSoft },
+    choiceName: { flex: 1, color: homeColors.text, fontSize: 16 },
     checkedName: { fontWeight: '600' },
-    checkmark: { color: '#222222', fontSize: 18 },
+    checkmark: { color: homeColors.accent, fontSize: 18 },
     cancel: {
         minHeight: 52,
         alignItems: 'center',
         justifyContent: 'center',
         padding: 12,
         borderTopWidth: StyleSheet.hairlineWidth,
-        borderTopColor: '#cccccc',
+        borderTopColor: homeColors.border,
     },
-    cancelText: { color: '#333333', fontSize: 16, fontWeight: '600' },
+    cancelText: { color: homeColors.accent, fontSize: 16, fontWeight: '600' },
 });

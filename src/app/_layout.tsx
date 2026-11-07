@@ -5,9 +5,16 @@ import { Alert, AppState } from 'react-native';
 import { initializeDatabase } from '@/database/database';
 import { refreshTodoReminders } from '@/repositories/todo.repository';
 import { configureNotificationHandler } from '@/services/notifications';
+import { homeColors } from '@/theme/homeColors';
 import { observeTodoNotificationTaps } from '@/services/notificationNavigation';
 
 configureNotificationHandler();
+
+const formHeader = {
+    headerStyle: { backgroundColor: homeColors.canvas },
+    headerTintColor: homeColors.text,
+    headerShadowVisible: false,
+};
 
 export const unstable_settings = { anchor: 'index' };
 
@@ -58,8 +65,14 @@ export default function RootLayout() {
     return (
         <Stack>
             <Stack.Screen name="index" options={{ title: 'Todos' }} />
-            <Stack.Screen name="todo/new" options={{ title: 'New Todo' }} />
-            <Stack.Screen name="todo/[id]" options={{ title: 'Edit Todo' }} />
+            <Stack.Screen
+                name="todo/new"
+                options={{ title: 'New Todo', ...formHeader }}
+            />
+            <Stack.Screen
+                name="todo/[id]"
+                options={{ title: 'Edit Todo', ...formHeader }}
+            />
         </Stack>
     );
 }

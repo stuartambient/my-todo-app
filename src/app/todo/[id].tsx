@@ -23,6 +23,7 @@ import {
     updateTodo,
 } from '@/repositories/todo.repository';
 import type { TodoFormValues } from '@/schemas/todo.schema';
+import { homeColors } from '@/theme/homeColors';
 import type { Todo } from '@/types/todo';
 
 export default function EditTodoScreen() {
@@ -213,7 +214,7 @@ function TodoEditor({ id }: { id: string }) {
     if (loading) {
         return (
             <View style={styles.centered}>
-                <ActivityIndicator size="large" />
+                <ActivityIndicator size="large" color={homeColors.accent} />
             </View>
         );
     }
@@ -246,103 +247,108 @@ function TodoEditor({ id }: { id: string }) {
     };
 
     return (
-        <View style={styles.screen}>
-            <View style={styles.formContainer}>
-                <TodoForm
-                    key={todo.updatedAt}
-                    todoTypes={todoTypes}
-                    /* categories={categories} */
-                    initialValues={initialValues}
-                    disabled={guard.busy}
-                    onDirtyChange={guard.onDirtyChange}
-                    submitLabel="Save Changes"
-                    onSubmit={handleSubmit}
-                />
-            </View>
+        <TodoForm
+            key={todo.updatedAt}
+            todoTypes={todoTypes}
+            initialValues={initialValues}
+            disabled={guard.busy}
+            onDirtyChange={guard.onDirtyChange}
+            submitLabel="Save Changes"
+            onSubmit={handleSubmit}
+            secondaryActions={
+                <View style={styles.actions}>
+                    <Pressable
+                        style={({ pressed }) => [
+                            styles.actionButton,
+                            styles.secondaryButton,
+                            (pressed || guard.busy) && styles.mutedButton,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityState={{ disabled: guard.busy }}
+                        disabled={guard.busy}
+                        onPress={() =>
+                            guard.confirmDiscard(
+                                () => void handleToggleCompleted(),
+                                `${todo.status === 'completed' ? 'Reopening' : 'Completing'} this todo will discard your unsaved changes.`,
+                            )
+                        }
+                    >
+                        <Text
+                            style={[
+                                styles.actionText,
+                                styles.secondaryButtonText,
+                            ]}
+                        >
+                            {todo.status === 'completed'
+                                ? 'Reopen Todo'
+                                : 'Complete Todo'}
+                        </Text>
+                    </Pressable>
 
-            <View style={styles.actions}>
-                <Pressable
-                    style={styles.secondaryButton}
-                    disabled={guard.busy}
-                    onPress={() =>
-                        guard.confirmDiscard(
-                            () => void handleToggleCompleted(),
-                            `${todo.status === 'completed' ? 'Reopening' : 'Completing'} this todo will discard your unsaved changes.`,
-                        )
-                    }
-                >
-                    <Text style={styles.secondaryButtonText}>
-                        {todo.status === 'completed'
-                            ? 'Reopen Todo'
-                            : 'Complete Todo'}
-                    </Text>
-                </Pressable>
-
-                <Pressable
-                    style={styles.deleteButton}
-                    disabled={guard.busy}
-                    onPress={handleDelete}
-                >
-                    <Text style={styles.deleteButtonText}>Delete Todo</Text>
-                </Pressable>
-            </View>
-        </View>
+                    <Pressable
+                        style={({ pressed }) => [
+                            styles.actionButton,
+                            styles.deleteButton,
+                            (pressed || guard.busy) && styles.mutedButton,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityState={{ disabled: guard.busy }}
+                        disabled={guard.busy}
+                        onPress={handleDelete}
+                    >
+                        <Text
+                            style={[styles.actionText, styles.deleteButtonText]}
+                        >
+                            Delete Todo
+                        </Text>
+                    </Pressable>
+                </View>
+            }
+        />
     );
 }
 
 const styles = StyleSheet.create({
-    screen: {
-        flex: 1,
-    },
-
-    formContainer: {
-        flex: 1,
-    },
-
     centered: {
         flex: 1,
+        backgroundColor: homeColors.canvas,
         alignItems: 'center',
         justifyContent: 'center',
         padding: 24,
     },
 
     errorText: {
-        color: '#b00020',
+        color: homeColors.overdue,
         fontSize: 16,
         textAlign: 'center',
     },
 
     actions: {
-        paddingHorizontal: 20,
-        paddingTop: 10,
-        paddingBottom: 20,
-        gap: 10,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
     },
 
-    secondaryButton: {
+    actionButton: {
+        flexGrow: 1,
+        flexBasis: 130,
+        minHeight: 44,
+        paddingHorizontal: 8,
+        paddingVertical: 8,
         alignItems: 'center',
-        paddingVertical: 13,
-        borderWidth: 1,
-        borderColor: '#555555',
+        justifyContent: 'center',
         borderRadius: 8,
     },
 
-    secondaryButtonText: {
-        fontSize: 16,
-        fontWeight: '600',
+    actionText: {
+        fontSize: 14,
+        fontWeight: '700',
+        textAlign: 'center',
     },
 
-    deleteButton: {
-        alignItems: 'center',
-        paddingVertical: 13,
-        borderWidth: 1,
-        borderColor: '#b00020',
-        borderRadius: 8,
-    },
-
-    deleteButtonText: {
-        color: '#b00020',
-        fontSize: 16,
-        fontWeight: '600',
-    },
+    secondaryButton: { backgroundColor: homeColors.accentSoft },
+    secondaryButtonText: { color: homeColors.accent },
+    deleteButton: { backgroundColor: homeColors.overdueSurface },
+    deleteButtonText: { color: homeColors.overdue },
+    mutedButton: { opacity: 0.55 },
 });

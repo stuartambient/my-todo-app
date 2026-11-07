@@ -13,6 +13,7 @@ import { useCategories } from '@/hooks/useCategories';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
 import { useUnsavedTodoGuard } from '@/hooks/useUnsavedTodoGuard';
 import { createTodo } from '@/repositories/todo.repository';
+import { homeColors } from '@/theme/homeColors';
 import type { TodoFormValues } from '@/schemas/todo.schema';
 
 export default function NewTodoScreen() {
@@ -57,7 +58,7 @@ export default function NewTodoScreen() {
     if (loading) {
         return (
             <View style={styles.centered}>
-                <ActivityIndicator size="large" />
+                <ActivityIndicator size="large" color={homeColors.accent} />
             </View>
         );
     }
@@ -94,13 +95,14 @@ export default function NewTodoScreen() {
 const styles = StyleSheet.create({
     centered: {
         flex: 1,
+        backgroundColor: homeColors.canvas,
         alignItems: 'center',
         justifyContent: 'center',
         padding: 24,
     },
 
     errorText: {
-        color: '#b00020',
+        color: homeColors.overdue,
         fontSize: 16,
         textAlign: 'center',
     },
