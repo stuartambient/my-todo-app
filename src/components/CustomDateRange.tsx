@@ -3,6 +3,7 @@ import { parseISO } from 'date-fns';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { homeColors } from '@/theme/homeColors';
 import { localDateKey } from '@/utils/recurrence';
 
 export type DateRange = { from: string; through: string };
@@ -92,7 +93,7 @@ const styles = StyleSheet.create({
         marginTop: 8,
         padding: 10,
         borderRadius: 8,
-        backgroundColor: '#f3f3f3',
+        backgroundColor: homeColors.accentSoft,
     },
     row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     date: {
@@ -101,11 +102,11 @@ const styles = StyleSheet.create({
         minHeight: 44,
         padding: 8,
         borderRadius: 6,
-        backgroundColor: '#ffffff',
+        backgroundColor: homeColors.surface,
     },
-    label: { color: '#555555', fontSize: 13 },
-    text: { color: '#222222', fontWeight: '600' },
-    error: { marginTop: 6, color: '#a32020' },
+    label: { color: homeColors.muted, fontSize: 13 },
+    text: { color: homeColors.text, fontWeight: '600' },
+    error: { marginTop: 6, color: homeColors.overdue },
     actions: { justifyContent: 'flex-end', marginTop: 6 },
     action: {
         minHeight: 44,
@@ -113,7 +114,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
         borderRadius: 6,
     },
-    apply: { backgroundColor: '#222222' },
-    applyText: { color: '#ffffff', fontWeight: '600' },
+    apply: { backgroundColor: homeColors.accent },
+    applyText: { color: homeColors.surface, fontWeight: '600' },
     disabled: { opacity: 0.5 },
 });

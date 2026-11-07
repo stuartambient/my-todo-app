@@ -19,14 +19,17 @@ import {
     TextInput,
     View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CustomDateRange, type DateRange } from '@/components/CustomDateRange';
+import { HomeIcon } from '@/components/HomeIcon';
 import { HomeViewMenu } from '@/components/HomeViewMenu';
 import { ReminderNotice } from '@/components/ReminderNotice';
 import { useTodoTypes } from '@/hooks/useTodoTypes';
 import { useTodos } from '@/hooks/useTodos';
 import { useRevealTodo } from '@/hooks/useRevealTodo';
 import { useMinuteTick } from '@/hooks/useMinuteTick';
+import { homeColors } from '@/theme/homeColors';
 import type { Todo, TodoStatus } from '@/types/todo';
 import { formatDueTime, getDueTime } from '@/utils/dueTime';
 import { localDateKey } from '@/utils/recurrence';
@@ -77,6 +80,7 @@ export default function HomeScreen() {
         createdTodoId?: string;
     }>();
     const isFocused = useIsFocused();
+    const { bottom } = useSafeAreaInsets();
     useMinuteTick(isFocused);
     const handledCreatedTodo = useRef<string | undefined>(undefined);
     const [status, setStatus] = useState<TodoStatus>('open');
@@ -248,8 +252,10 @@ export default function HomeScreen() {
             ? null
             : getDueTime(item.dueDate, item.dueTime);
 
+        const overdue = dueTime?.status === 'overdue';
+
         return (
-            <View style={styles.todoRow}>
+            <View style={[styles.todoRow, overdue && styles.todoRowOverdue]}>
                 {isCompleted ? (
                     <View style={styles.completeButton}>
                         <View
@@ -261,7 +267,6 @@ export default function HomeScreen() {
                 ) : (
                     <Pressable
                         style={styles.completeButton}
-                        hitSlop={8}
                         accessibilityRole="button"
                         accessibilityLabel={`Mark ${item.subject} complete`}
                         onPress={() => {
@@ -273,7 +278,10 @@ export default function HomeScreen() {
                 )}
 
                 <Pressable
-                    style={styles.todoContent}
+                    style={({ pressed }) => [
+                        styles.todoContent,
+                        pressed && styles.pressed,
+                    ]}
                     onPress={() =>
                         openScreen({
                             pathname: '/todo/[id]',
@@ -282,44 +290,54 @@ export default function HomeScreen() {
                     }
                 >
                     <View style={styles.subjectRow}>
-                        <Text style={styles.subject} numberOfLines={1}>
+                        <Text style={styles.subject} numberOfLines={2}>
                             {item.subject}
                         </Text>
 
                         {item.priority === 'high' && (
-                            <Text style={styles.priority}>!</Text>
+                            <Text
+                                style={styles.priority}
+                                accessibilityLabel="High priority"
+                            >
+                                !
+                            </Text>
                         )}
                     </View>
 
-                    <Text style={styles.metadata}>
-                        {typeName}
-                        {item.dueDate ? ` · ${item.dueDate}` : ''}
-                        {item.dueDate && item.dueTime
-                            ? ` · ${formatDueTime(item.dueTime)}`
-                            : ''}
-                    </Text>
-
-                    {isCompleted && item.completedAt && (
-                        <Text style={styles.completedText}>
-                            Completed{' '}
-                            {new Date(item.completedAt).toLocaleDateString()}
+                    <View style={styles.detailsRow}>
+                        <Text style={styles.metadata}>
+                            {typeName}
+                            {item.dueDate ? ` · ${item.dueDate}` : ''}
+                            {item.dueDate && item.dueTime
+                                ? ` · ${formatDueTime(item.dueTime)}`
+                                : ''}
                         </Text>
-                    )}
 
-                    {dueTime && (
-                        <Text
-                            style={[
-                                styles.dueTime,
-                                dueTime.status === 'soon' && styles.dueTimeSoon,
-                                dueTime.status === 'overdue' &&
-                                    styles.dueTimeOverdue,
-                            ]}
-                        >
-                            {dueTime.status === 'overdue'
-                                ? dueTime.label
-                                : `Due in ${dueTime.label}`}
-                        </Text>
-                    )}
+                        {isCompleted && item.completedAt && (
+                            <Text style={styles.completedText}>
+                                Completed{' '}
+                                {new Date(
+                                    item.completedAt,
+                                ).toLocaleDateString()}
+                            </Text>
+                        )}
+
+                        {dueTime && (
+                            <Text
+                                style={[
+                                    styles.dueTime,
+                                    dueTime.status === 'soon' &&
+                                        styles.dueTimeSoon,
+                                    dueTime.status === 'overdue' &&
+                                        styles.dueTimeOverdue,
+                                ]}
+                            >
+                                {dueTime.status === 'overdue'
+                                    ? dueTime.label
+                                    : `Due in ${dueTime.label}`}
+                            </Text>
+                        )}
+                    </View>
                 </Pressable>
             </View>
         );
@@ -330,6 +348,9 @@ export default function HomeScreen() {
             <Stack.Screen
                 options={{
                     title: showingCompleted ? 'Completed' : 'Todos',
+                    headerStyle: { backgroundColor: homeColors.canvas },
+                    headerTintColor: homeColors.text,
+                    headerShadowVisible: false,
                     headerRight: showingCompleted
                         ? undefined
                         : () => (
@@ -358,6 +379,7 @@ export default function HomeScreen() {
             />
 
             <View style={styles.searchContainer}>
+                <HomeIcon name="search" color={homeColors.muted} />
                 <TextInput
                     style={styles.searchInput}
                     value={search}
@@ -367,7 +389,7 @@ export default function HomeScreen() {
                             ? 'Search completed todos'
                             : 'Search open todos'
                     }
-                    placeholderTextColor="#777777"
+                    placeholderTextColor={homeColors.muted}
                     accessibilityLabel="Search todos"
                     accessibilityHint="Search subjects and notes in the current list"
                     autoCapitalize="none"
@@ -467,7 +489,7 @@ export default function HomeScreen() {
 
             {loading && todos.length === 0 ? (
                 <View style={styles.centered}>
-                    <ActivityIndicator size="large" />
+                    <ActivityIndicator size="large" color={homeColors.accent} />
                 </View>
             ) : error ? (
                 <View style={styles.centered}>
@@ -501,11 +523,12 @@ export default function HomeScreen() {
                     stickySectionHeadersEnabled={false}
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="on-drag"
-                    contentContainerStyle={
+                    contentContainerStyle={[
                         visibleTodos.length === 0
                             ? styles.emptyList
-                            : styles.list
-                    }
+                            : styles.list,
+                        { paddingBottom: 92 + bottom },
+                    ]}
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
                             <Text style={styles.emptyTitle}>
@@ -535,12 +558,16 @@ export default function HomeScreen() {
             )}
 
             <Pressable
-                style={styles.addButton}
+                style={({ pressed }) => [
+                    styles.addButton,
+                    { bottom: 16 + bottom },
+                    pressed && styles.pressed,
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Create todo"
                 onPress={() => openScreen('/todo/new')}
             >
-                <Text style={styles.addButtonText}>+</Text>
+                <HomeIcon name="add" color={homeColors.surface} />
             </Pressable>
         </View>
     );
@@ -549,7 +576,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
     screen: {
         flex: 1,
-        backgroundColor: '#ffffff',
+        backgroundColor: homeColors.canvas,
     },
 
     backToOpenButton: {
@@ -559,7 +586,7 @@ const styles = StyleSheet.create({
     },
 
     backToOpenText: {
-        color: '#333333',
+        color: homeColors.text,
         fontSize: 17,
         fontWeight: '600',
     },
@@ -567,7 +594,7 @@ const styles = StyleSheet.create({
     rangeSummary: {
         marginHorizontal: 16,
         marginTop: 6,
-        color: '#555555',
+        color: homeColors.muted,
     },
     dateRanges: {
         flexDirection: 'row',
@@ -581,16 +608,19 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingHorizontal: 10,
         paddingVertical: 6,
-        borderRadius: 8,
-        backgroundColor: '#f3f3f3',
+        borderRadius: 22,
+        borderWidth: 1,
+        borderColor: homeColors.border,
+        backgroundColor: homeColors.surface,
     },
     dateRangeSelected: {
-        backgroundColor: '#222222',
+        backgroundColor: homeColors.accent,
+        borderColor: homeColors.accent,
     },
     dateRangeLabel: {
         fontSize: 13,
         fontWeight: '600',
-        color: '#333333',
+        color: homeColors.text,
     },
     dateRangeLabelSelected: {
         color: '#ffffff',
@@ -600,11 +630,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginHorizontal: 16,
         marginTop: 8,
-        marginBottom: 8,
+        paddingStart: 12,
         borderWidth: 1,
-        borderColor: '#cccccc',
+        borderColor: homeColors.border,
         borderRadius: 10,
-        backgroundColor: '#f7f7f7',
+        backgroundColor: homeColors.surface,
     },
 
     searchInput: {
@@ -613,7 +643,7 @@ const styles = StyleSheet.create({
         minHeight: 48,
         paddingHorizontal: 12,
         paddingVertical: 10,
-        color: '#222222',
+        color: homeColors.text,
         fontSize: 16,
     },
 
@@ -624,7 +654,7 @@ const styles = StyleSheet.create({
     },
 
     clearSearchText: {
-        color: '#333333',
+        color: homeColors.text,
         fontSize: 14,
         fontWeight: '600',
     },
@@ -636,56 +666,82 @@ const styles = StyleSheet.create({
     list: {
         paddingHorizontal: 16,
         paddingTop: 4,
-        paddingBottom: 100,
     },
 
     todoRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        minHeight: 76,
-        paddingVertical: 12,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: '#cccccc',
+        minHeight: 64,
+        marginBottom: 4,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: homeColors.border,
+        borderStartWidth: 3,
+        backgroundColor: homeColors.surface,
+    },
+
+    todoRowOverdue: {
+        borderStartColor: homeColors.overdueEdge,
+        backgroundColor: homeColors.overdueSurface,
     },
 
     completeButton: {
-        paddingRight: 14,
-        paddingVertical: 10,
+        width: 46,
+        minHeight: 44,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 
     checkbox: {
-        width: 24,
-        height: 24,
+        width: 22,
+        height: 22,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 2,
-        borderColor: '#555555',
-        borderRadius: 12,
+        borderColor: homeColors.muted,
+        borderRadius: 11,
     },
 
     completedCheckbox: {
-        borderColor: '#555555',
-        backgroundColor: '#555555',
+        borderColor: homeColors.accent,
+        backgroundColor: homeColors.accent,
     },
 
     checkmark: {
-        color: '#ffffff',
-        fontSize: 15,
+        color: homeColors.surface,
+        fontSize: 14,
         fontWeight: '700',
     },
 
     dateHeading: {
-        marginTop: 20,
-        paddingBottom: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: '#dddddd',
-        color: '#222222',
-        fontSize: 18,
+        marginTop: 14,
+        marginBottom: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 8,
+        backgroundColor: homeColors.accentSoft,
+        color: homeColors.text,
+        fontSize: 16,
         fontWeight: '700',
     },
 
     todoContent: {
         flex: 1,
+        minHeight: 44,
+        justifyContent: 'center',
+        paddingEnd: 12,
+        paddingVertical: 8,
+    },
+
+    pressed: { opacity: 0.72 },
+
+    detailsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        columnGap: 8,
+        rowGap: 3,
+        marginTop: 3,
     },
 
     subjectRow: {
@@ -695,42 +751,49 @@ const styles = StyleSheet.create({
 
     subject: {
         flex: 1,
-        fontSize: 17,
-        fontWeight: '600',
+        color: homeColors.text,
+        fontSize: 16,
+        fontWeight: '700',
     },
 
     priority: {
         marginLeft: 10,
-        color: '#b00020',
+        color: homeColors.overdue,
         fontSize: 20,
         fontWeight: '700',
     },
 
     metadata: {
-        marginTop: 5,
-        color: '#666666',
+        flexShrink: 1,
+        color: homeColors.muted,
         fontSize: 13,
     },
 
     completedText: {
-        marginTop: 3,
-        color: '#666666',
+        flexShrink: 1,
+        color: homeColors.muted,
         fontSize: 13,
     },
 
     dueTime: {
-        marginTop: 3,
-        color: '#555555',
+        flexShrink: 1,
+        color: homeColors.muted,
         fontSize: 13,
         fontWeight: '600',
     },
 
     dueTimeSoon: {
-        color: '#a05a00',
+        color: homeColors.soon,
     },
 
     dueTimeOverdue: {
-        color: '#b00020',
+        color: homeColors.overdue,
+        backgroundColor: homeColors.overdueBadge,
+        borderRadius: 5,
+        overflow: 'hidden',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        fontWeight: '700',
     },
 
     centered: {
@@ -741,7 +804,7 @@ const styles = StyleSheet.create({
     },
 
     errorText: {
-        color: '#b00020',
+        color: homeColors.overdue,
         fontSize: 16,
         textAlign: 'center',
     },
@@ -751,7 +814,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingVertical: 10,
         borderRadius: 8,
-        backgroundColor: '#222222',
+        backgroundColor: homeColors.accent,
     },
 
     retryButtonText: {
@@ -763,21 +826,27 @@ const styles = StyleSheet.create({
         flexGrow: 1,
         justifyContent: 'center',
         padding: 24,
-        paddingBottom: 100,
     },
 
     emptyContainer: {
         alignItems: 'center',
+        padding: 24,
+        borderWidth: 1,
+        borderColor: homeColors.border,
+        borderRadius: 14,
+        backgroundColor: homeColors.surface,
     },
 
     emptyTitle: {
+        color: homeColors.text,
+        textAlign: 'center',
         fontSize: 20,
         fontWeight: '600',
     },
 
     emptyText: {
         marginTop: 8,
-        color: '#666666',
+        color: homeColors.muted,
         fontSize: 15,
         textAlign: 'center',
     },
@@ -785,20 +854,12 @@ const styles = StyleSheet.create({
     addButton: {
         position: 'absolute',
         right: 24,
-        bottom: 24,
-        width: 58,
-        height: 58,
+        width: 56,
+        height: 56,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 29,
-        backgroundColor: '#222222',
+        borderRadius: 18,
+        backgroundColor: homeColors.accent,
         elevation: 4,
-    },
-
-    addButtonText: {
-        color: '#ffffff',
-        fontSize: 34,
-        lineHeight: 38,
-        fontWeight: '300',
     },
 });

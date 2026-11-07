@@ -10,6 +10,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { HomeIcon } from '@/components/HomeIcon';
+import { homeColors } from '@/theme/homeColors';
+
 type Props = { onViewCompleted: () => void };
 
 export function HomeViewMenu({ onViewCompleted }: Props) {
@@ -32,7 +35,7 @@ export function HomeViewMenu({ onViewCompleted }: Props) {
                     setVisible(true);
                 }}
             >
-                <Text style={styles.icon}>⋮</Text>
+                <HomeIcon name="more" color={homeColors.text} />
             </Pressable>
             <Modal
                 visible={visible}
@@ -97,10 +100,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    icon: {
-        color: '#333333',
-        fontSize: 28,
-    },
     overlay: {
         flex: 1,
         backgroundColor: 'rgba(0, 0, 0, 0.12)',
@@ -112,7 +111,9 @@ const styles = StyleSheet.create({
         maxWidth: '90%',
         paddingVertical: 4,
         borderRadius: 10,
-        backgroundColor: '#ffffff',
+        borderWidth: 1,
+        borderColor: homeColors.border,
+        backgroundColor: homeColors.surface,
         elevation: 8,
         shadowColor: '#000000',
         shadowOpacity: 0.18,
@@ -126,7 +127,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
     },
     menuText: {
-        color: '#222222',
+        color: homeColors.text,
         fontSize: 16,
     },
 });
