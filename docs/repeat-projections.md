@@ -8,7 +8,7 @@ The projection uses the series' original calendar anchor, interval, current temp
 
 Browsing a range does not save the projected occurrences or schedule their notifications. The existing rolling 30-day preparation still runs on its normal refresh triggers; only saved occurrences participate in notification reconciliation. Future preview reminder times describe the planned schedule, not an already-registered Android alarm.
 
-All open continues to show saved open todos, including undated todos and manually scheduled distant dates. It does not attempt an infinite expansion of endless repeats. Custom shows the selected inclusive date boundaries. A request exceeding 10,000 projected occurrences produces a message asking for a shorter range rather than silently omitting dates.
+Today is the default view. Today, Next 7 days, Next 30 days, and Custom share one row; All open has been removed. Presets include overdue todos and keep undated todos in the No due date section. Custom shows only the selected inclusive date boundaries, including manually scheduled distant dates and calculated repeats. After creating a future-dated todo, the home screen selects a bounded Custom range from today through its due date so the saved todo can still be revealed. A request exceeding 10,000 projected occurrences produces a message asking for a shorter range rather than silently omitting dates.
 
 ## Opening and acting on a future occurrence
 
@@ -32,6 +32,6 @@ On the phone:
 2. Use the weekly repeat starting in two weeks with an end date in March 2030. Apply a Custom range through that end date and check every expected week appears.
 3. Open a distant Planned row. Check its full date/time and planned reminder. Follow Edit repeating todo, then back out without changing it.
 4. Complete one distant preview and delete a different occurrence. Reapply the range: both disappear from open results, the completed occurrence appears in history, and other scheduled dates remain.
-5. Check All open, undated todos, ordinary editing and a near-term reminder still behave as before.
+5. Check Today is selected on launch, all four choices share a row, and overdue/undated todos are accessible in presets. Check ordinary editing and a near-term reminder still behave as before.
 
 TypeScript, lint, Jest, the repository's SQLite/reminder scripts and a production Android JavaScript export are checked during implementation. Native delivery and the final standalone APK require the phone review above.

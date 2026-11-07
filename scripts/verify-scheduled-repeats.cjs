@@ -568,6 +568,23 @@ async function main() {
             ),
         );
     });
+    const undated = await repository.createTodo({
+        ...defaults,
+        subject: 'Undated preset task',
+        dueDate: null,
+        dueTime: null,
+        reminderAt: null,
+        recurrenceFrequency: null,
+        recurrenceInterval: null,
+        recurrenceBasis: null,
+        recurrenceEndDate: null,
+    });
+    const preset = await repository.getOpenTodos({ from: null, through: day(0) });
+    const custom = await repository.getOpenTodos({ from: day(0), through: day(0) });
+    check('presets keep undated todos accessible while Custom stays date-only', () => {
+        assert(preset.some((todo) => todo.id === undated.id));
+        assert(!custom.some((todo) => todo.id === undated.id));
+    });
     // Planning through March 2030 must not create years of rows or alarms.
     const planning = await repository.createTodo({
         ...defaults,

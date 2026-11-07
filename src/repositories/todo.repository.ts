@@ -299,8 +299,8 @@ export async function getOpenTodos(
             result = sortPlannedTodos([
                 ...saved
                     .filter((row) => {
-                        if (row.status !== 'open' || !row.due_date)
-                            return false;
+                        if (row.status !== 'open') return false;
+                        if (!row.due_date) return range.from === null;
                         // Legacy timestamps use the device's local day, just
                         // like the home list's date headings and filters.
                         const date = /^\d{4}-\d{2}-\d{2}$/.test(row.due_date)

@@ -7,7 +7,7 @@ import {
     useIsFocused,
     type Href,
 } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -33,9 +33,9 @@ import { homeColors } from '@/theme/homeColors';
 import type { Todo, TodoStatus } from '@/types/todo';
 import { formatDueTime, getDueTime } from '@/utils/dueTime';
 import { localDateKey } from '@/utils/recurrence';
+import { getTodoById } from '@/repositories/todo.repository';
 
 const dateRanges = [
-    { label: 'All open', daysAhead: null },
     { label: 'Today', daysAhead: 0 },
     { label: 'Next 7 days', daysAhead: 6 },
     { label: 'Next 30 days', daysAhead: 29 },
@@ -82,10 +82,9 @@ export default function HomeScreen() {
     const isFocused = useIsFocused();
     const { bottom } = useSafeAreaInsets();
     useMinuteTick(isFocused);
-    const handledCreatedTodo = useRef<string | undefined>(undefined);
     const [status, setStatus] = useState<TodoStatus>('open');
     const [search, setSearch] = useState('');
-    const [daysAhead, setDaysAhead] = useState<DaysAhead>(null);
+    const [daysAhead, setDaysAhead] = useState<DaysAhead>(0);
     const [customRange, setCustomRange] = useState<DateRange | null>(null);
     const [editingRange, setEditingRange] = useState(false);
     const openingScreen = useRef(false);
@@ -96,18 +95,14 @@ export default function HomeScreen() {
     const searchTerm = search.trim().toLowerCase();
     const searching = searchTerm.length > 0;
     const rangeEnd = new Date();
-    if (daysAhead !== null) {
-        rangeEnd.setDate(rangeEnd.getDate() + daysAhead);
-    }
+    rangeEnd.setDate(rangeEnd.getDate() + daysAhead);
     const firstVisibleDate =
         !showingCompleted && customRange ? customRange.from : null;
     const lastVisibleDate = showingCompleted
         ? null
         : customRange
           ? customRange.through
-          : daysAhead !== null
-            ? localDateKey(rangeEnd)
-            : null;
+          : localDateKey(rangeEnd);
 
     const { todos, loading, error, refresh, complete } = useTodos(
         status,
@@ -121,13 +116,17 @@ export default function HomeScreen() {
 
         return todos.filter((todo) => {
             if (lastVisibleDate) {
-                if (!todo.dueDate) return false;
-                const due = getDateKey(todo.dueDate);
-                if (
-                    due > lastVisibleDate ||
-                    (firstVisibleDate && due < firstVisibleDate)
-                ) {
-                    return false;
+                if (!todo.dueDate) {
+                    // Presets retain the undated section; Custom is date-only.
+                    if (firstVisibleDate) return false;
+                } else {
+                    const due = getDateKey(todo.dueDate);
+                    if (
+                        due > lastVisibleDate ||
+                        (firstVisibleDate && due < firstVisibleDate)
+                    ) {
+                        return false;
+                    }
                 }
             }
 
@@ -196,20 +195,37 @@ export default function HomeScreen() {
             finishReveal,
         );
 
+    useEffect(() => {
+        if (!createdTodoId) return;
+        let cancelled = false;
+        // Keep a newly saved future todo visible without an unbounded view.
+        void getTodoById(createdTodoId)
+            .then((todo) => {
+                if (cancelled) return;
+                const today = localDateKey(new Date());
+                const due = todo?.dueDate ? getDateKey(todo.dueDate) : null;
+                setStatus('open');
+                setSearch('');
+                setDaysAhead(0);
+                setEditingRange(false);
+                setCustomRange(
+                    due && due > today ? { from: today, through: due } : null,
+                );
+            })
+            .catch((error) =>
+                console.error('Unable to reveal saved todo:', error),
+            );
+        return () => {
+            cancelled = true;
+        };
+    }, [createdTodoId]);
+
     useFocusEffect(
         useCallback(() => {
             openingScreen.current = false;
-            if (createdTodoId && handledCreatedTodo.current !== createdTodoId) {
-                handledCreatedTodo.current = createdTodoId;
-                setStatus('open');
-                setSearch('');
-                setDaysAhead(null);
-                setCustomRange(null);
-                setEditingRange(false);
-            }
             void refresh();
             void refreshTypes();
-        }, [refresh, refreshTypes, createdTodoId]),
+        }, [refresh, refreshTypes]),
     );
 
     useFocusEffect(
@@ -558,7 +574,7 @@ export default function HomeScreen() {
                                     : showingCompleted
                                       ? 'Todos you complete will appear here.'
                                       : lastVisibleDate
-                                        ? 'Choose All open to see todos outside this range or without a due date.'
+                                        ? 'Choose another range or use Custom to see other dates.'
                                         : 'Tap + to create a todo.'}
                             </Text>
                         </View>
@@ -607,15 +623,15 @@ const styles = StyleSheet.create({
     },
     dateRanges: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
         gap: 6,
         marginHorizontal: 16,
         marginTop: 8,
     },
     dateRange: {
+        flexShrink: 1,
         minHeight: 44,
         justifyContent: 'center',
-        paddingHorizontal: 10,
+        paddingHorizontal: 8,
         paddingVertical: 6,
         borderRadius: 22,
         borderWidth: 1,
@@ -627,7 +643,8 @@ const styles = StyleSheet.create({
         borderColor: homeColors.accent,
     },
     dateRangeLabel: {
-        fontSize: 13,
+        textAlign: 'center',
+        fontSize: 12,
         fontWeight: '600',
         color: homeColors.text,
     },
