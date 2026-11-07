@@ -90,7 +90,6 @@ export default function HomeScreen() {
     const [editingRange, setEditingRange] = useState(false);
     const openingScreen = useRef(false);
 
-    const { todos, loading, error, refresh, complete } = useTodos(status);
     const { todoTypes, refresh: refreshTypes } = useTodoTypes();
 
     const showingCompleted = status === 'completed';
@@ -109,6 +108,13 @@ export default function HomeScreen() {
           : daysAhead !== null
             ? localDateKey(rangeEnd)
             : null;
+
+    const { todos, loading, error, refresh, complete } = useTodos(
+        status,
+        lastVisibleDate
+            ? { from: firstVisibleDate, through: lastVisibleDate }
+            : null,
+    );
 
     const visibleTodos = useMemo(() => {
         if (!lastVisibleDate && !searching) return todos;
@@ -305,6 +311,9 @@ export default function HomeScreen() {
                     </View>
 
                     <View style={styles.detailsRow}>
+                        {item.isProjected && (
+                            <Text style={styles.plannedLabel}>Planned</Text>
+                        )}
                         <Text style={styles.metadata}>
                             {typeName}
                             {item.dueDate ? ` · ${item.dueDate}` : ''}
@@ -735,6 +744,7 @@ const styles = StyleSheet.create({
 
     pressed: { opacity: 0.72 },
 
+    plannedLabel: { color: homeColors.accent, fontSize: 12, fontWeight: '700' },
     detailsRow: {
         flexDirection: 'row',
         flexWrap: 'wrap',

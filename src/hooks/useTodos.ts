@@ -13,7 +13,12 @@ import {
 import type { Todo, TodoStatus } from '@/types/todo';
 import { localDateKey } from '@/utils/recurrence';
 
-export function useTodos(status: TodoStatus = 'open') {
+export function useTodos(
+    status: TodoStatus = 'open',
+    range?: { from: string | null; through: string } | null,
+) {
+    const from = range?.from ?? null;
+    const through = range?.through ?? null;
     const [todos, setTodos] = useState<Todo[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
@@ -30,7 +35,7 @@ export function useTodos(status: TodoStatus = 'open') {
             const result =
                 status === 'completed'
                     ? await getCompletedTodos()
-                    : await getOpenTodos();
+                    : await getOpenTodos(through ? { from, through } : null);
 
             if (currentRequest === requestId.current) {
                 setTodos(result);
@@ -52,7 +57,7 @@ export function useTodos(status: TodoStatus = 'open') {
                 setLoading(false);
             }
         }
-    }, [status]);
+    }, [status, from, through]);
 
     useEffect(() => {
         const unsubscribe = subscribeTodoChanges(() => void refresh());
@@ -109,7 +114,9 @@ export function useTodos(status: TodoStatus = 'open') {
                 const result =
                     status === 'completed'
                         ? await getCompletedTodos()
-                        : await getOpenTodos();
+                        : await getOpenTodos(
+                              through ? { from, through } : null,
+                          );
 
                 if (currentRequest === requestId.current) {
                     setTodos(result);
@@ -139,7 +146,7 @@ export function useTodos(status: TodoStatus = 'open') {
         return () => {
             requestId.current += 1;
         };
-    }, [status]);
+    }, [status, from, through]);
 
     return {
         todos: todos.filter((todo) => todo.status === status),

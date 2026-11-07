@@ -24,6 +24,13 @@ import { notifyTodoChanged } from '@/services/todoChanges';
 import { maintainDeliveryHistory } from '@/services/reminderDeliveryHistory';
 import { SNOOZE_MINUTES } from '@/services/reminderNotificationConstants';
 
+import {
+    projectRepeats,
+    projectionIdentity,
+    sortPlannedTodos,
+    type TodoRange,
+} from './repeatProjections';
+
 export type CreateTodoInput = TodoFormValues;
 export type UpdateTodoInput = CreateTodoInput;
 
@@ -168,19 +175,109 @@ export function refreshRecurringTodos(): Promise<void> {
     });
 }
 
-export async function getTodoById(id: string): Promise<Todo | null> {
-    const database = await getDatabase();
-    const row = await database.getFirstAsync<TodoRow>(
+async function resolveProjection(
+    tx: SQLiteDatabase,
+    id: string,
+    persist: boolean,
+): Promise<Todo | null> {
+    const identity = projectionIdentity(id);
+    if (!identity) return null;
+    const saved = await tx.getFirstAsync<TodoRow>(
+        'SELECT * FROM todos WHERE recurrence_series_id = ? AND due_date = ?',
+        identity.seriesId,
+        identity.date,
+    );
+    if (saved) return mapTodoRow(saved);
+    const series = await tx.getFirstAsync<SeriesRow>(
+        'SELECT * FROM todo_recurrence_series WHERE id = ?',
+        identity.seriesId,
+    );
+    if (!series) return null;
+    const projected = projectRepeats([series], [], {
+        from: identity.date,
+        through: identity.date,
+    })[0];
+    if (!projected || !persist) return projected ?? null;
+    const values = todoSchema.parse(projected);
+    const savedId = await insertTodo(
+        tx,
+        values,
+        new Date().toISOString(),
+        series.anchor_date,
+        null,
+        series.id,
+    );
+    const row = await tx.getFirstAsync<TodoRow>(
         'SELECT * FROM todos WHERE id = ?',
-        id,
+        savedId,
     );
     return row ? mapTodoRow(row) : null;
 }
 
-export async function getOpenTodos(): Promise<Todo[]> {
+export async function getTodoById(id: string): Promise<Todo | null> {
+    const database = await getDatabase();
+    // A consistent snapshot prevents an edit/cancellation from racing a preview.
+    return enqueueWrite(async () => {
+        let todo: Todo | null = null;
+        await database.withExclusiveTransactionAsync(async (tx) => {
+            await lockSeries(tx);
+            const row = await tx.getFirstAsync<TodoRow>(
+                'SELECT * FROM todos WHERE id = ?',
+                id,
+            );
+            todo = row
+                ? mapTodoRow(row)
+                : await resolveProjection(tx, id, false);
+            if (
+                todo?.status === 'open' &&
+                todo.recurrenceSeriesId &&
+                todo.dueDate
+            ) {
+                const series = await tx.getFirstAsync<SeriesRow>(
+                    'SELECT * FROM todo_recurrence_series WHERE id = ?',
+                    todo.recurrenceSeriesId,
+                );
+                if (
+                    series?.active &&
+                    todo.recurrenceBasis === 'due_date' &&
+                    todo.dueDate > series.last_date
+                )
+                    todo.isProjected = true;
+            }
+        });
+        return todo;
+    });
+}
+
+export function getSeriesEditingTodoId(id: string): Promise<string> {
+    return enqueueWrite(async () => {
+        const database = await getDatabase();
+        const identity = projectionIdentity(id);
+        const row = await database.getFirstAsync<TodoRow>(
+            'SELECT * FROM todos WHERE id = ?',
+            id,
+        );
+        const seriesId = row?.recurrence_series_id ?? identity?.seriesId;
+        if (!seriesId) throw new Error('Repeating todo not found.');
+        const current = await database.getFirstAsync<{ id: string }>(
+            `SELECT t.id FROM todos t JOIN todo_recurrence_series s ON s.id = t.recurrence_series_id
+             WHERE s.id = ? AND s.active = 1 AND t.status = 'open' AND t.due_date <= s.last_date
+             ORDER BY t.due_date, t.created_at, t.id LIMIT 1`,
+            seriesId,
+        );
+        if (!current)
+            throw new Error('No current occurrence is available to edit.');
+        return current.id;
+    });
+}
+
+export async function getOpenTodos(
+    range: TodoRange | null = null,
+): Promise<Todo[]> {
     await refreshRecurringTodos();
     const database = await getDatabase();
-    const rows = await database.getAllAsync<TodoRow>(`
+    if (!range) {
+        const rows = await database.getAllAsync<TodoRow>(`
         SELECT * FROM todos
         WHERE status = 'open'
         ORDER BY
@@ -189,7 +286,37 @@ export async function getOpenTodos(): Promise<Todo[]> {
             CASE WHEN due_time IS NULL THEN 1 ELSE 0 END,
             due_time, priority DESC, created_at, id
     `);
-    return rows.map(mapTodoRow);
+        return rows.map(mapTodoRow);
+    }
+    return enqueueWrite(async () => {
+        let result: Todo[] = [];
+        await database.withExclusiveTransactionAsync(async (tx) => {
+            await lockSeries(tx);
+            const saved = await tx.getAllAsync<TodoRow>('SELECT * FROM todos');
+            const series = await tx.getAllAsync<SeriesRow>(
+                'SELECT * FROM todo_recurrence_series WHERE active = 1',
+            );
+            result = sortPlannedTodos([
+                ...saved
+                    .filter((row) => {
+                        if (row.status !== 'open' || !row.due_date)
+                            return false;
+                        // Legacy timestamps use the device's local day, just
+                        // like the home list's date headings and filters.
+                        const date = /^\d{4}-\d{2}-\d{2}$/.test(row.due_date)
+                            ? row.due_date
+                            : localDateKey(new Date(row.due_date));
+                        return (
+                            date <= range.through &&
+                            (!range.from || date >= range.from)
+                        );
+                    })
+                    .map(mapTodoRow),
+                ...projectRepeats(series, saved, range),
+            ]);
+        });
+        return result;
+    });
 }
 
 export async function getCompletedTodos(): Promise<Todo[]> {
@@ -218,8 +345,12 @@ export function createTodo(input: CreateTodoInput): Promise<Todo> {
             );
             await createSeries(tx, id, values, now);
         });
-        const todo = await getTodoById(id);
-        if (!todo) throw new Error('Failed to create todo.');
+        const saved = await database.getFirstAsync<TodoRow>(
+            'SELECT * FROM todos WHERE id = ?',
+            id,
+        );
+        if (!saved) throw new Error('Failed to create todo.');
+        const todo = mapTodoRow(saved);
         await synchronizeSavedReminders(
             Boolean(
                 todo.reminderAt && Date.parse(todo.reminderAt) > Date.now(),
@@ -271,7 +402,24 @@ export function updateTodo(id: string, input: UpdateTodoInput): Promise<void> {
                 'SELECT * FROM todos WHERE id = ?',
                 id,
             );
-            if (!current) throw new Error('Todo not found.');
+            if (!current)
+                throw new Error(
+                    'Open the repeating todo to edit a future preview.',
+                );
+            if (current.recurrence_series_id && current.status === 'open') {
+                const series = await tx.getFirstAsync<SeriesRow>(
+                    'SELECT * FROM todo_recurrence_series WHERE id = ?',
+                    current.recurrence_series_id,
+                );
+                if (
+                    series?.active &&
+                    current.recurrence_basis === 'due_date' &&
+                    current.due_date! > series.last_date
+                )
+                    throw new Error(
+                        'Open the repeating todo to edit future occurrences.',
+                    );
+            }
 
             const sameSchedule =
                 current.due_date === values.dueDate &&
@@ -407,10 +555,20 @@ async function completeTodoInTransaction(
     await transaction.runAsync(
         'UPDATE todo_notification_sync SET revision = revision + 1 WHERE id = 1',
     );
-    const row = await transaction.getFirstAsync<TodoRow>(
+    let row = await transaction.getFirstAsync<TodoRow>(
         'SELECT * FROM todos WHERE id = ?',
         id,
     );
+    if (!row) {
+        const occurrence = await resolveProjection(transaction, id, true);
+        if (occurrence) {
+            id = occurrence.id;
+            row = await transaction.getFirstAsync<TodoRow>(
+                'SELECT * FROM todos WHERE id = ?',
+                id,
+            );
+        }
+    }
     if (!row) throw new Error('Todo not found.');
     if (row.status === 'completed') return;
 
@@ -563,10 +721,20 @@ export function deleteTodo(
         await database.withExclusiveTransactionAsync(async (tx) => {
             await lockSeries(tx);
             await adoptLegacySeries(tx);
-            const row = await tx.getFirstAsync<TodoRow>(
+            let row = await tx.getFirstAsync<TodoRow>(
                 'SELECT * FROM todos WHERE id = ?',
                 id,
             );
+            if (!row) {
+                const occurrence = await resolveProjection(tx, id, true);
+                if (occurrence) {
+                    id = occurrence.id;
+                    row = await tx.getFirstAsync<TodoRow>(
+                        'SELECT * FROM todos WHERE id = ?',
+                        id,
+                    );
+                }
+            }
             if (!row) return;
             const series = row.recurrence_series_id
                 ? await tx.getFirstAsync<SeriesRow>(

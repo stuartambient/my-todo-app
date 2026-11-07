@@ -8,6 +8,8 @@ export type RecurrenceBasis = 'due_date' | 'completion_date';
 
 export type Todo = {
     id: string;
+    // Read-time occurrence; not a persisted todo or scheduled notification.
+    isProjected?: boolean;
 
     typeId: string;
     categoryId: string | null;

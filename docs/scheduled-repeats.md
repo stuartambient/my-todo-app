@@ -9,7 +9,7 @@ The existing **Repeat based on** choice controls generation:
 
 There is no additional generation-mode setting. Both modes respect the optional inclusive end date. A daily series ending November 6 includes November 6 and never generates November 7. Nothing automatically completes an overdue occurrence.
 
-Calendar series prepare occurrences and their individual local notifications through **30 days ahead** when the app opens/resumes, the home list refreshes, the local day changes while the list is mounted, or a notification action is processed. Upcoming dates therefore appear in the existing dated list. A later refresh extends that window and catches up missed dates. Large backlogs advance in atomic batches of 1,000 periods without skipping dates.
+Calendar series prepare occurrences and their individual local notifications through **30 days ahead** when the app opens/resumes, the home list refreshes, the local day changes while the list is mounted, or a notification action is processed. Prepared dates appear in All open. Finite date-range views also calculate later due-date repeats on demand without saving them or registering their notifications; see [Future repeats in date-range planning](repeat-projections.md). A later refresh extends the preparation window and catches up missed dates. Large backlogs advance in atomic batches of 1,000 periods without skipping dates.
 
 This is advance scheduling, not an Android periodic background worker. Already-prepared alarms work with the app closed; if the app is neither opened nor used through reminder actions for longer than the prepared window, it must be reopened to extend the schedule. Old missed reminder times are not replayed as immediate alerts. Native Android permissions, precise-alarm access and channel behavior remain unchanged.
 
@@ -23,6 +23,8 @@ Repeating todos offer **Cancel**, **Delete this occurrence**, and **Delete entir
 Rules are identified by stable series IDs, never subject text or the continued existence of an original parent row. Unrelated todos with the same subject are independent.
 
 ## Editing
+
+Calculated future previews link to an existing saved occurrence through **Edit repeating todo**. They support completion and deletion, but do not directly edit a distant date or advance the preparation cursor.
 
 Editing an open repeating occurrence updates the series template and applicable upcoming open occurrences. Earlier overdue occurrences and completed history are preserved. Ordinary edits retain future occurrence IDs and do not overwrite independently snoozed reminders unless the reminder itself was changed. Changing the calendar schedule rebuilds applicable open future dates; shortening an end date removes open future occurrences beyond the new limit. Skipped dates remain excluded. Turning Repeat to None stops that series; enabling it again creates a fresh series.
 

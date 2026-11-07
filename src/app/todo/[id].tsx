@@ -1,5 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     AppState,
@@ -10,6 +10,7 @@ import {
     View,
 } from 'react-native';
 
+import { FutureTodoPreview } from '@/components/FutureTodoPreview';
 import { TodoForm } from '@/components/TodoForm';
 import { subscribeTodoChanges } from '@/services/todoChanges';
 import { useCategories } from '@/hooks/useCategories';
@@ -19,6 +20,7 @@ import {
     completeTodo,
     deleteTodo,
     getTodoById,
+    getSeriesEditingTodoId,
     reopenTodo,
     updateTodo,
 } from '@/repositories/todo.repository';
@@ -36,6 +38,7 @@ export default function EditTodoScreen() {
 function TodoEditor({ id }: { id: string }) {
     const guard = useUnsavedTodoGuard();
     const { dirtyRef } = guard;
+    const loadedId = useRef(id);
     const [todo, setTodo] = useState<Todo | null>(null);
     const [loadingTodo, setLoadingTodo] = useState(true);
     const [todoError, setTodoError] = useState<Error | null>(null);
@@ -73,6 +76,7 @@ function TodoEditor({ id }: { id: string }) {
                     return;
                 }
 
+                loadedId.current = result.id;
                 setTodoError(null);
                 setTodo(result);
             } catch (err) {
@@ -96,7 +100,8 @@ function TodoEditor({ id }: { id: string }) {
 
         void loadTodo();
         const unsubscribe = subscribeTodoChanges((changedId) => {
-            if (changedId === id) void loadTodo();
+            if (changedId === id || changedId === loadedId.current)
+                void loadTodo();
         });
         const subscription = AppState.addEventListener('change', (state) => {
             if (state === 'active') void loadTodo();
@@ -229,6 +234,43 @@ function TodoEditor({ id }: { id: string }) {
         );
     }
 
+    if (todo.isProjected) {
+        return (
+            <>
+                <Stack.Screen options={{ title: 'Future occurrence' }} />
+                <FutureTodoPreview
+                    todo={todo}
+                    typeName={
+                        todoTypes.find((type) => type.id === todo.typeId)
+                            ?.name ?? 'Todo'
+                    }
+                    busy={guard.busy}
+                    onComplete={() => void handleToggleCompleted()}
+                    onDelete={handleDelete}
+                    onEditSeries={() => {
+                        void guard
+                            .perform(
+                                () => getSeriesEditingTodoId(todo.id),
+                                (sourceId) =>
+                                    router.replace({
+                                        pathname: '/todo/[id]',
+                                        params: { id: sourceId },
+                                    }),
+                            )
+                            .catch((error) =>
+                                Alert.alert(
+                                    'Unable to open repeating todo',
+                                    error instanceof Error
+                                        ? error.message
+                                        : 'Please try again.',
+                                ),
+                            );
+                    }}
+                />
+            </>
+        );
+    }
+
     const initialValues: TodoFormValues = {
         typeId: todo.typeId,
         categoryId: null,
@@ -247,64 +289,70 @@ function TodoEditor({ id }: { id: string }) {
     };
 
     return (
-        <TodoForm
-            key={todo.updatedAt}
-            todoTypes={todoTypes}
-            initialValues={initialValues}
-            disabled={guard.busy}
-            onDirtyChange={guard.onDirtyChange}
-            submitLabel="Save Changes"
-            onSubmit={handleSubmit}
-            secondaryActions={
-                <View style={styles.actions}>
-                    <Pressable
-                        style={({ pressed }) => [
-                            styles.actionButton,
-                            styles.secondaryButton,
-                            (pressed || guard.busy) && styles.mutedButton,
-                        ]}
-                        accessibilityRole="button"
-                        accessibilityState={{ disabled: guard.busy }}
-                        disabled={guard.busy}
-                        onPress={() =>
-                            guard.confirmDiscard(
-                                () => void handleToggleCompleted(),
-                                `${todo.status === 'completed' ? 'Reopening' : 'Completing'} this todo will discard your unsaved changes.`,
-                            )
-                        }
-                    >
-                        <Text
-                            style={[
-                                styles.actionText,
-                                styles.secondaryButtonText,
+        <>
+            <Stack.Screen options={{ title: 'Edit Todo' }} />
+            <TodoForm
+                key={todo.updatedAt}
+                todoTypes={todoTypes}
+                initialValues={initialValues}
+                disabled={guard.busy}
+                onDirtyChange={guard.onDirtyChange}
+                submitLabel="Save Changes"
+                onSubmit={handleSubmit}
+                secondaryActions={
+                    <View style={styles.actions}>
+                        <Pressable
+                            style={({ pressed }) => [
+                                styles.actionButton,
+                                styles.secondaryButton,
+                                (pressed || guard.busy) && styles.mutedButton,
                             ]}
+                            accessibilityRole="button"
+                            accessibilityState={{ disabled: guard.busy }}
+                            disabled={guard.busy}
+                            onPress={() =>
+                                guard.confirmDiscard(
+                                    () => void handleToggleCompleted(),
+                                    `${todo.status === 'completed' ? 'Reopening' : 'Completing'} this todo will discard your unsaved changes.`,
+                                )
+                            }
                         >
-                            {todo.status === 'completed'
-                                ? 'Reopen Todo'
-                                : 'Complete Todo'}
-                        </Text>
-                    </Pressable>
+                            <Text
+                                style={[
+                                    styles.actionText,
+                                    styles.secondaryButtonText,
+                                ]}
+                            >
+                                {todo.status === 'completed'
+                                    ? 'Reopen Todo'
+                                    : 'Complete Todo'}
+                            </Text>
+                        </Pressable>
 
-                    <Pressable
-                        style={({ pressed }) => [
-                            styles.actionButton,
-                            styles.deleteButton,
-                            (pressed || guard.busy) && styles.mutedButton,
-                        ]}
-                        accessibilityRole="button"
-                        accessibilityState={{ disabled: guard.busy }}
-                        disabled={guard.busy}
-                        onPress={handleDelete}
-                    >
-                        <Text
-                            style={[styles.actionText, styles.deleteButtonText]}
+                        <Pressable
+                            style={({ pressed }) => [
+                                styles.actionButton,
+                                styles.deleteButton,
+                                (pressed || guard.busy) && styles.mutedButton,
+                            ]}
+                            accessibilityRole="button"
+                            accessibilityState={{ disabled: guard.busy }}
+                            disabled={guard.busy}
+                            onPress={handleDelete}
                         >
-                            Delete Todo
-                        </Text>
-                    </Pressable>
-                </View>
-            }
-        />
+                            <Text
+                                style={[
+                                    styles.actionText,
+                                    styles.deleteButtonText,
+                                ]}
+                            >
+                                Delete Todo
+                            </Text>
+                        </Pressable>
+                    </View>
+                }
+            />
+        </>
     );
 }
 

@@ -391,6 +391,10 @@ test('custom dates are inclusive, reject a reversed range, and only apply on con
     expect(
         screen.getByRole('radio', { name: 'Custom…', checked: true }),
     ).toBeTruthy();
+    expect(useTodos).toHaveBeenLastCalledWith('open', {
+        from: '2020-11-07',
+        through: '2020-11-10',
+    });
     expect(screen.getByText('First day')).toBeTruthy();
     expect(screen.getByText('Last day')).toBeTruthy();
     expect(screen.queryByText('Before range')).toBeNull();

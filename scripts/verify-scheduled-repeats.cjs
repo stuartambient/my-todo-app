@@ -568,6 +568,161 @@ async function main() {
             ),
         );
     });
+    // Planning through March 2030 must not create years of rows or alarms.
+    const planning = await repository.createTodo({
+        ...defaults,
+        dueDate: day(14),
+        recurrenceFrequency: 'week',
+        recurrenceEndDate: '2030-03-31',
+        reminderAt: new Date(clock + 14 * 86400000 + 3600000).toISOString(),
+    });
+    const planningSid = planning.recurrenceSeriesId;
+    const legacyDate = new Date();
+    legacyDate.setDate(legacyDate.getDate() + 14);
+    legacyDate.setHours(23, 30, 0, 0);
+    await database.runAsync('UPDATE todos SET due_date = ? WHERE id = ?', legacyDate.toISOString(), planning.id);
+    const localDayResults = await repository.getOpenTodos({ from: day(14), through: day(14) });
+    check('range filtering keeps legacy timestamps on the same local day as the home headings', () => {
+        assert(localDayResults.some((todo) => todo.id === planning.id));
+    });
+    await database.runAsync('UPDATE todos SET due_date = ? WHERE id = ?', planning.dueDate, planning.id);
+    const planningBefore = rows(planningSid);
+    const cursorBefore = { ...series(planningSid) };
+    const alarmsBefore = [...pending.keys()].sort();
+    const longRange = { from: day(14), through: '2030-03-31' };
+    const expectedPlanningDates = [];
+    const weeklyDate = new Date();
+    weeklyDate.setDate(weeklyDate.getDate() + 14);
+    while (localDateKey(weeklyDate) <= longRange.through) {
+        expectedPlanningDates.push(localDateKey(weeklyDate));
+        weeklyDate.setDate(weeklyDate.getDate() + 7);
+    }
+    const plan = (await repository.getOpenTodos(longRange)).filter(
+        (todo) => todo.recurrenceSeriesId === planningSid,
+    );
+    const futureProjections = plan.filter((todo) => todo.isProjected);
+    check(
+        'a custom range shows every weekly date through March 2030 with no 30-day display cutoff',
+        () => {
+            assert.deepEqual(
+                plan.map((todo) => todo.dueDate),
+                expectedPlanningDates,
+            );
+            assert(futureProjections.length > 100);
+            assert.equal(
+                new Date(futureProjections[0].reminderAt).getHours(),
+                new Date(planning.reminderAt).getHours(),
+            );
+            assert.deepEqual(rows(planningSid), planningBefore);
+            assert.deepEqual({ ...series(planningSid) }, cursorBefore);
+            assert.deepEqual([...pending.keys()].sort(), alarmsBefore);
+        },
+    );
+    const inspected = await repository.getTodoById(futureProjections[10].id);
+    const editSource = await repository.getSeriesEditingTodoId(futureProjections[10].id);
+    check(
+        'opening a preview and finding its editable source are read-only',
+        () => {
+            assert.equal(inspected.isProjected, true);
+            assert.equal(editSource, planning.id);
+            assert.deepEqual(rows(planningSid), planningBefore);
+            assert.deepEqual({ ...series(planningSid) }, cursorBefore);
+        },
+    );
+    await assert.rejects(
+        () =>
+            repository.updateTodo(futureProjections[10].id, {
+                ...planning,
+                subject: 'Unsafe far-future edit',
+            }),
+        /repeating todo/,
+    );
+    await Promise.all([
+        repository.completeTodo(futureProjections[10].id),
+        repository.completeTodo(futureProjections[10].id),
+    ]);
+    const completedPreview = await repository.getTodoById(futureProjections[10].id);
+    check(
+        'completing a preview persists exactly one UUID occurrence and does not advance the series cursor',
+        () => {
+            assert.equal(rows(planningSid).length, planningBefore.length + 1);
+            assert.equal(completedPreview.status, 'completed');
+            assert.notEqual(completedPreview.id, futureProjections[10].id);
+            assert.deepEqual({ ...series(planningSid) }, cursorBefore);
+            assert(!pending.has(idFor(completedPreview.id)));
+        },
+    );
+    await repository.reopenTodo(completedPreview.id);
+    await assert.rejects(
+        () =>
+            repository.updateTodo(completedPreview.id, {
+                ...planning,
+                dueDate: completedPreview.dueDate,
+            }),
+        /repeating todo/,
+    );
+    await repository.completeTodo(futureProjections[10].id);
+    await repository.deleteTodo(futureProjections[11].id, 'occurrence');
+    const planAfter = (await repository.getOpenTodos(longRange)).filter(
+        (todo) => todo.recurrenceSeriesId === planningSid,
+    );
+    check(
+        'completed and skipped future dates stay absent without duplicates',
+        () => {
+            assert.deepEqual(
+                planAfter.map((todo) => todo.dueDate),
+                expectedPlanningDates.filter(
+                    (date) =>
+                        date !== futureProjections[10].dueDate &&
+                        date !== futureProjections[11].dueDate,
+                ),
+            );
+            assert.equal(rows(planningSid).length, planningBefore.length + 1);
+            assert.equal(
+                new Set(planAfter.map((todo) => todo.id)).size,
+                planAfter.length,
+            );
+        },
+    );
+    const basisCompletion = await repository.createTodo({
+        ...defaults,
+        dueDate: day(14),
+        recurrenceFrequency: 'week',
+        recurrenceBasis: 'completion_date',
+        recurrenceEndDate: '2030-03-31',
+    });
+    const completionPlan = (await repository.getOpenTodos(longRange)).filter(
+        (todo) =>
+            todo.recurrenceSeriesId === basisCompletion.recurrenceSeriesId,
+    );
+    check(
+        'completion-based repeats are not falsely projected into fixed future dates',
+        () => assert.equal(completionPlan.length, 1),
+    );
+    const cancelled = await repository.createTodo({
+        ...defaults,
+        dueDate: day(14),
+        recurrenceFrequency: 'week',
+        recurrenceEndDate: '2030-03-31',
+    });
+    const cancelledPlan = (await repository.getOpenTodos(longRange)).filter(
+        (todo) => todo.recurrenceSeriesId === cancelled.recurrenceSeriesId,
+    );
+    await repository.deleteTodo(
+        cancelledPlan.find((todo) => todo.isProjected).id,
+        'series',
+    );
+    const afterCancel = (await repository.getOpenTodos(longRange)).filter(
+        (todo) => todo.recurrenceSeriesId === cancelled.recurrenceSeriesId,
+    );
+    check(
+        'entire-series deletion from a preview stops projections and keeps an unrelated same-subject series',
+        () => {
+            assert.equal(afterCancel.length, 0);
+            assert.equal(series(cancelled.recurrenceSeriesId).active, 0);
+            assert(rows(planningSid).length > 0);
+        },
+    );
     // Round trip all rules, skipped dates and stopped series into a fresh DB.
     const backup = await backups.createBackup();
     const expectedRows = database.db
@@ -618,6 +773,29 @@ async function main() {
                 ['2030-01-31', '2030-02-28', '2030-03-31'],
             );
             assert.equal(rows(monthly.recurrenceSeriesId)[1].status, 'open');
+        },
+    );
+    check(
+        'later rolling generation does not duplicate a previously completed preview or recreate a skipped date',
+        () => {
+            const materialized = rows(planningSid);
+            assert.equal(
+                materialized.filter(
+                    (row) => row.due_date === futureProjections[10].dueDate,
+                ).length,
+                1,
+            );
+            assert.equal(
+                materialized.find((row) => row.due_date === futureProjections[10].dueDate)
+                    .status,
+                'completed',
+            );
+            assert.equal(
+                materialized.filter(
+                    (row) => row.due_date === futureProjections[11].dueDate,
+                ).length,
+                0,
+            );
         },
     );
     console.log(`${checks} scheduled recurrence checks passed.`);

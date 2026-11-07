@@ -15,12 +15,14 @@ import {
     completeTodo,
     deleteTodo,
     getTodoById,
+    getSeriesEditingTodoId,
     updateTodo,
 } from '@/repositories/todo.repository';
 import type { Todo } from '@/types/todo';
 
 jest.mock('expo-router', () => ({
-    router: { back: jest.fn() },
+    router: { back: jest.fn(), replace: jest.fn() },
+    Stack: { Screen: () => null },
     useNavigation: jest.fn(),
     useLocalSearchParams: () => ({ id: 'one' }),
 }));
@@ -45,6 +47,7 @@ jest.mock('@/hooks/useCategories', () => ({
 }));
 jest.mock('@/repositories/todo.repository', () => ({
     getTodoById: jest.fn(),
+    getSeriesEditingTodoId: jest.fn(),
     updateTodo: jest.fn(),
     completeTodo: jest.fn(),
     deleteTodo: jest.fn(),
@@ -215,5 +218,47 @@ test('a failed entire-series deletion keeps edits protected; retry uses the seri
     expect(jest.mocked(usePreventRemove).mock.calls.at(-1)![0]).toBe(true);
     await fireEvent.press(screen.getByText('Delete Todo'));
     await pressAlert('Delete entire series');
+    expect(router.back).toHaveBeenCalledTimes(1);
+});
+
+test('future previews show planned dates without an editable form and link to the repeating todo', async () => {
+    jest.mocked(getTodoById).mockResolvedValue({
+        ...saved,
+        isProjected: true,
+        recurrenceFrequency: 'week',
+    });
+    jest.mocked(getSeriesEditingTodoId).mockResolvedValue('current-instance');
+    await render(<EditTodoScreen />);
+    await waitFor(() =>
+        expect(screen.getByText('From your repeat schedule')).toBeTruthy(),
+    );
+    expect(screen.queryByLabelText('Subject')).toBeNull();
+    expect(screen.getByText('Planned reminder')).toBeTruthy();
+    expect(screen.getByText('No reminder')).toBeTruthy();
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Edit repeating todo' }),
+    );
+    expect(getSeriesEditingTodoId).toHaveBeenCalledWith('one');
+    expect(router.replace).toHaveBeenCalledWith({
+        pathname: '/todo/[id]',
+        params: { id: 'current-instance' },
+    });
+    expect(updateTodo).not.toHaveBeenCalled();
+});
+
+test('a future preview can be completed using its occurrence identity', async () => {
+    jest.mocked(getTodoById).mockResolvedValue({
+        ...saved,
+        isProjected: true,
+        recurrenceFrequency: 'week',
+    });
+    await render(<EditTodoScreen />);
+    await waitFor(() =>
+        expect(screen.getByText('From your repeat schedule')).toBeTruthy(),
+    );
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Complete Todo' }),
+    );
+    expect(completeTodo).toHaveBeenCalledWith('one');
     expect(router.back).toHaveBeenCalledTimes(1);
 });
