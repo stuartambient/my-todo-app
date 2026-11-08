@@ -699,7 +699,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         paddingHorizontal: 8,
         paddingVertical: 6,
-        borderRadius: 22,
+        borderRadius: 10,
         borderWidth: 1,
         borderColor: homeColors.border,
         backgroundColor: homeColors.surface,
