@@ -521,3 +521,30 @@ test('menu tools close the menu and navigate to the existing backup and reminder
         }),
     ).toBeNull();
 });
+
+test('Next 30 days selects its range while only Custom opens the date editor', async () => {
+    await render(<HomeScreen />);
+    const through = new Date();
+    through.setDate(through.getDate() + 29);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Next 30 days' }));
+    expect(
+        screen.getByRole('radio', { name: 'Next 30 days', checked: true }),
+    ).toBeTruthy();
+    expect(useTodos).toHaveBeenLastCalledWith('open', {
+        from: null,
+        through: localDateKey(through),
+    });
+    expect(screen.queryByRole('button', { name: 'From' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Apply range' })).toBeNull();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Custom…' }));
+    expect(screen.getByRole('button', { name: 'From' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Through' })).toBeTruthy();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Custom…' }));
+    expect(screen.queryByRole('button', { name: 'From' })).toBeNull();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Custom…' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Next 30 days' }));
+    expect(screen.queryByRole('button', { name: 'From' })).toBeNull();
+    expect(
+        screen.getByRole('radio', { name: 'Next 30 days', checked: true }),
+    ).toBeTruthy();
+});

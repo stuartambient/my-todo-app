@@ -39,9 +39,10 @@ const dateRanges = [
     { label: 'Today', daysAhead: 0 },
     { label: 'Next 7 days', daysAhead: 6 },
     { label: 'Next 30 days', daysAhead: 29 },
+    { label: 'Custom…', daysAhead: null },
 ] as const;
 
-type DaysAhead = (typeof dateRanges)[number]['daysAhead'];
+type DaysAhead = Exclude<(typeof dateRanges)[number]['daysAhead'], null>;
 
 type TodoSection = {
     key: string;
@@ -487,10 +488,16 @@ export default function HomeScreen() {
             </View>
 
             {!showingCompleted && (
-                <View style={styles.dateRanges} accessibilityRole="radiogroup">
+                <View
+                    style={styles.dateRanges}
+                    accessibilityRole="radiogroup"
+                    collapsable={false}
+                >
                     {dateRanges.map((range) => {
-                        const selected =
-                            !customRange && daysAhead === range.daysAhead;
+                        const isCustom = range.daysAhead === null;
+                        const selected = isCustom
+                            ? Boolean(customRange)
+                            : !customRange && daysAhead === range.daysAhead;
                         return (
                             <Pressable
                                 key={range.label}
@@ -499,11 +506,21 @@ export default function HomeScreen() {
                                     selected && styles.dateRangeSelected,
                                 ]}
                                 accessibilityRole="radio"
-                                accessibilityState={{ checked: selected }}
+                                accessibilityLabel={range.label}
+                                accessibilityState={{
+                                    checked: selected,
+                                    expanded: isCustom
+                                        ? editingRange
+                                        : undefined,
+                                }}
                                 onPress={() => {
-                                    setDaysAhead(range.daysAhead);
-                                    setCustomRange(null);
-                                    setEditingRange(false);
+                                    if (range.daysAhead === null) {
+                                        setEditingRange((editing) => !editing);
+                                    } else {
+                                        setDaysAhead(range.daysAhead);
+                                        setCustomRange(null);
+                                        setEditingRange(false);
+                                    }
                                 }}
                             >
                                 <Text
@@ -518,27 +535,6 @@ export default function HomeScreen() {
                             </Pressable>
                         );
                     })}
-                    <Pressable
-                        style={[
-                            styles.dateRange,
-                            customRange && styles.dateRangeSelected,
-                        ]}
-                        accessibilityRole="radio"
-                        accessibilityState={{
-                            checked: Boolean(customRange),
-                            expanded: editingRange,
-                        }}
-                        onPress={() => setEditingRange(!editingRange)}
-                    >
-                        <Text
-                            style={[
-                                styles.dateRangeLabel,
-                                customRange && styles.dateRangeLabelSelected,
-                            ]}
-                        >
-                            Custom…
-                        </Text>
-                    </Pressable>
                 </View>
             )}
 
@@ -694,10 +690,11 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
     dateRange: {
-        flexShrink: 1,
+        flex: 1,
+        minWidth: 0,
         minHeight: 44,
         justifyContent: 'center',
-        paddingHorizontal: 8,
+        paddingHorizontal: 4,
         paddingVertical: 6,
         borderRadius: 10,
         borderWidth: 1,
