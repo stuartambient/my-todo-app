@@ -139,11 +139,26 @@ export default function HomeScreen() {
     }, [todos, firstVisibleDate, lastVisibleDate, searching, searchTerm]);
 
     const sections = useMemo<TodoSection[]>(() => {
-        // Preserve the existing completed-list order without headings.
         if (showingCompleted) {
-            return visibleTodos.length > 0
-                ? [{ key: 'completed', title: null, data: visibleTodos }]
-                : [];
+            // The repository returns newest completions first. Group by that
+            // date, rather than the due date, while retaining its row order.
+            const groups = new Map<string, Todo[]>();
+            for (const todo of visibleTodos) {
+                const date = todo.completedAt
+                    ? getDateKey(todo.completedAt)
+                    : 'earlier';
+                const group = groups.get(date) ?? [];
+                group.push(todo);
+                groups.set(date, group);
+            }
+            return Array.from(groups, ([date, data]) => ({
+                key: `completed:${date}`,
+                title:
+                    date === 'earlier'
+                        ? 'Earlier completions'
+                        : formatDateHeading(date),
+                data,
+            }));
         }
 
         const datedGroups = new Map<string, Todo[]>();
@@ -277,7 +292,13 @@ export default function HomeScreen() {
         const overdue = dueTime?.status === 'overdue';
 
         return (
-            <View style={[styles.todoRow, overdue && styles.todoRowOverdue]}>
+            <View
+                style={[
+                    styles.todoRow,
+                    isCompleted && styles.completedRow,
+                    overdue && styles.todoRowOverdue,
+                ]}
+            >
                 {isCompleted ? (
                     <View style={styles.completeButton}>
                         <View
@@ -304,6 +325,13 @@ export default function HomeScreen() {
                         styles.todoContent,
                         pressed && styles.pressed,
                     ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${isCompleted ? 'Review completed todo' : 'Open todo'}: ${item.subject}`}
+                    accessibilityHint={
+                        isCompleted
+                            ? 'View details or reopen this todo'
+                            : undefined
+                    }
                     onPress={() =>
                         openScreen({
                             pathname: '/todo/[id]',
@@ -312,10 +340,19 @@ export default function HomeScreen() {
                     }
                 >
                     <View style={styles.subjectRow}>
-                        <Text style={styles.subject} numberOfLines={2}>
+                        <Text
+                            style={[
+                                styles.subject,
+                                isCompleted && styles.completedSubject,
+                            ]}
+                            numberOfLines={2}
+                        >
                             {item.subject}
                         </Text>
 
+                        {isCompleted && (
+                            <Text style={styles.reviewLabel}>Review ›</Text>
+                        )}
                         {item.priority === 'high' && (
                             <Text
                                 style={styles.priority}
@@ -338,15 +375,6 @@ export default function HomeScreen() {
                                 : ''}
                         </Text>
 
-                        {isCompleted && item.completedAt && (
-                            <Text style={styles.completedText}>
-                                Completed{' '}
-                                {new Date(
-                                    item.completedAt,
-                                ).toLocaleDateString()}
-                            </Text>
-                        )}
-
                         {dueTime && (
                             <Text
                                 style={[
@@ -363,6 +391,12 @@ export default function HomeScreen() {
                             </Text>
                         )}
                     </View>
+                    {isCompleted && item.completedAt && (
+                        <Text style={styles.completedText}>
+                            Completed{' '}
+                            {new Date(item.completedAt).toLocaleDateString()}
+                        </Text>
+                    )}
                 </Pressable>
             </View>
         );
@@ -394,8 +428,12 @@ export default function HomeScreen() {
                                   accessibilityLabel="Back to open todos"
                                   onPress={() => setStatus('open')}
                               >
+                                  <HomeIcon
+                                      name="back"
+                                      color={homeColors.accent}
+                                  />
                                   <Text style={styles.backToOpenText}>
-                                      ‹ Open
+                                      Todos
                                   </Text>
                               </Pressable>
                           )
@@ -403,6 +441,20 @@ export default function HomeScreen() {
                 }}
             />
 
+            {showingCompleted && (
+                <View style={styles.historyIntro}>
+                    <Text
+                        style={styles.historyTitle}
+                        accessibilityRole="header"
+                    >
+                        Completed history
+                    </Text>
+                    <Text style={styles.historyDescription}>
+                        A record of what you’ve finished. Open a todo to review
+                        it or reopen it.
+                    </Text>
+                </View>
+            )}
             <View style={styles.searchContainer}>
                 <HomeIcon name="search" color={homeColors.muted} />
                 <TextInput
@@ -508,9 +560,11 @@ export default function HomeScreen() {
                 />
             )}
 
-            <View style={styles.reminderNoticeContainer}>
-                <ReminderNotice />
-            </View>
+            {!showingCompleted && (
+                <View style={styles.reminderNoticeContainer}>
+                    <ReminderNotice />
+                </View>
+            )}
 
             {loading && todos.length === 0 ? (
                 <View style={styles.centered}>
@@ -538,7 +592,11 @@ export default function HomeScreen() {
                     renderSectionHeader={({ section }) =>
                         section.title ? (
                             <Text
-                                style={styles.dateHeading}
+                                style={[
+                                    styles.dateHeading,
+                                    showingCompleted &&
+                                        styles.completedDateHeading,
+                                ]}
                                 accessibilityRole="header"
                             >
                                 {section.title}
@@ -552,7 +610,10 @@ export default function HomeScreen() {
                         visibleTodos.length === 0
                             ? styles.emptyList
                             : styles.list,
-                        { paddingBottom: 92 + bottom },
+                        {
+                            paddingBottom:
+                                (showingCompleted ? 24 : 92) + bottom,
+                        },
                     ]}
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
@@ -572,7 +633,7 @@ export default function HomeScreen() {
                                         ? 'Try different words, clear your search, or choose a wider range.'
                                         : `Try different words or clear your search. Searching ${showingCompleted ? 'completed' : 'open'} todos only.`
                                     : showingCompleted
-                                      ? 'Todos you complete will appear here.'
+                                      ? 'Todos you complete will appear here. Open one to review it or reopen it.'
                                       : lastVisibleDate
                                         ? 'Choose another range or use Custom to see other dates.'
                                         : 'Tap + to create a todo.'}
@@ -582,18 +643,20 @@ export default function HomeScreen() {
                 />
             )}
 
-            <Pressable
-                style={({ pressed }) => [
-                    styles.addButton,
-                    { bottom: 16 + bottom },
-                    pressed && styles.pressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Create todo"
-                onPress={() => openScreen('/todo/new')}
-            >
-                <HomeIcon name="add" color={homeColors.surface} />
-            </Pressable>
+            {!showingCompleted && (
+                <Pressable
+                    style={({ pressed }) => [
+                        styles.addButton,
+                        { bottom: 16 + bottom },
+                        pressed && styles.pressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Create todo"
+                    onPress={() => openScreen('/todo/new')}
+                >
+                    <HomeIcon name="add" color={homeColors.surface} />
+                </Pressable>
+            )}
         </View>
     );
 }
@@ -605,6 +668,9 @@ const styles = StyleSheet.create({
     },
 
     backToOpenButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 2,
         minHeight: 44,
         justifyContent: 'center',
         paddingRight: 16,
@@ -729,8 +795,35 @@ const styles = StyleSheet.create({
     },
 
     completedCheckbox: {
-        borderColor: homeColors.accent,
-        backgroundColor: homeColors.accent,
+        borderColor: homeColors.muted,
+        backgroundColor: homeColors.muted,
+    },
+    completedRow: { borderStartWidth: 1 },
+    completedSubject: { color: homeColors.muted, fontWeight: '600' },
+    reviewLabel: {
+        color: homeColors.accent,
+        fontSize: 12,
+        fontWeight: '600',
+        marginStart: 8,
+    },
+    completedDateHeading: {
+        backgroundColor: 'transparent',
+        color: homeColors.muted,
+        fontSize: 14,
+        paddingHorizontal: 2,
+        paddingVertical: 4,
+    },
+    historyIntro: {
+        marginHorizontal: 18,
+        marginTop: 8,
+        marginBottom: 6,
+        gap: 6,
+    },
+    historyTitle: { color: homeColors.text, fontSize: 22, fontWeight: '700' },
+    historyDescription: {
+        color: homeColors.muted,
+        fontSize: 14,
+        lineHeight: 21,
     },
 
     checkmark: {
@@ -797,6 +890,7 @@ const styles = StyleSheet.create({
     },
 
     completedText: {
+        marginTop: 4,
         flexShrink: 1,
         color: homeColors.muted,
         fontSize: 13,

@@ -1,17 +1,15 @@
-import { Stack } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Text, View } from 'react-native';
 
+import {
+    UtilityButton,
+    UtilityCard,
+    UtilityNotice,
+    UtilityScreen,
+    utilityStyles,
+} from '@/components/UtilityScreen';
+import { homeColors } from '@/theme/homeColors';
 import { createBackup, restoreBackup } from '@/repositories/backup.repository';
 import {
     backupFolderLabel,
@@ -29,6 +27,9 @@ export default function BackupScreen() {
     const [selection, setSelection] = useState<Selection | null>(null);
     const [busy, setBusy] = useState(false);
     const [message, setMessage] = useState('');
+    const [messageSection, setMessageSection] = useState<'save' | 'restore'>(
+        'save',
+    );
     const busyRef = useRef(false);
     const mounted = useRef(true);
     const folderRequest = useRef(0);
@@ -60,10 +61,12 @@ export default function BackupScreen() {
             mounted.current = false;
         };
     }, [loadFolder]);
-    const insets = useSafeAreaInsets();
     usePreventRemove(busy, () => {});
 
-    async function run(operation: () => Promise<void>) {
+    async function run(
+        operation: () => Promise<void>,
+        failureTitle = 'Unable to finish',
+    ) {
         if (busyRef.current) return;
         busyRef.current = true;
         setBusy(true);
@@ -80,13 +83,13 @@ export default function BackupScreen() {
                             void run(async () => {
                                 if (await chooseBackupFolder())
                                     await saveCurrentBackup();
-                            }),
+                            }, 'Unable to save backup'),
                     },
                 ]);
                 return;
             }
             Alert.alert(
-                'Unable to finish',
+                failureTitle,
                 error instanceof Error ? error.message : 'Please try again.',
             );
         } finally {
@@ -98,7 +101,10 @@ export default function BackupScreen() {
 
     async function saveCurrentBackup() {
         const name = await saveBackupFile(await createBackup());
-        if (name) setMessage(`Backup saved: ${name}`);
+        if (name) {
+            setMessageSection('save');
+            setMessage(`Backup saved: ${name}`);
+        }
     }
 
     function confirmRestore() {
@@ -115,246 +121,176 @@ export default function BackupScreen() {
                         void run(async () => {
                             const result = await restoreBackup(backup);
                             setSelection(null);
+                            setMessageSection('restore');
                             setMessage(
                                 `Restore complete: ${result.added} added, ${result.skipped} already present or repeat conflicts skipped.`,
                             );
-                        }),
+                        }, 'Unable to restore backup'),
                 },
             ],
         );
     }
 
     return (
-        <ScrollView
-            style={styles.screen}
-            contentContainerStyle={[
-                styles.content,
-                { paddingBottom: insets.bottom + 24 },
-            ]}
+        <UtilityScreen
+            title="Backup & restore"
+            heading="Keep your todos safe"
+            description="Save a copy of your todos, or bring missing ones back from a backup."
+            busy={busy}
         >
-            <Stack.Screen
-                options={{ title: 'Backup & restore', gestureEnabled: !busy }}
-            />
-            <Text style={styles.heading} accessibilityRole="header">
-                Keep a copy of your todos
-            </Text>
-            <Text style={styles.description}>
-                Backups include open and completed todos, notes, dates,
-                reminders, and repeat settings.
-            </Text>
-            <Text style={styles.description}>
-                Save the file in a folder outside TodoApp. Copy it to your
-                computer or cloud storage to keep it safe if your phone is lost.
-                Backups are plain text and include your notes.
-            </Text>
-            {!folderReady ? (
-                <Text style={styles.hint}>Loading backup folder…</Text>
-            ) : folderError ? (
-                <>
-                    <Text style={styles.hint}>
-                        Unable to load your backup folder. Please try again.
-                    </Text>
-                    <Pressable
-                        accessibilityRole="button"
-                        disabled={busy}
-                        style={styles.cancelButton}
-                        onPress={() => {
-                            setFolderReady(false);
-                            void loadFolder();
-                        }}
-                    >
-                        <Text style={styles.secondaryText}>
-                            Retry loading folder
+            <UtilityCard
+                title="Save a backup"
+                icon="backup"
+                description="Includes open and completed todos, notes, dates, reminders, and repeat settings."
+            >
+                <View style={utilityStyles.notice}>
+                    {!folderReady ? (
+                        <Text style={utilityStyles.hint}>
+                            Loading backup folder…
                         </Text>
-                    </Pressable>
-                </>
-            ) : folder ? (
-                <>
-                    <Text style={styles.hint}>
-                        Backup folder: {backupFolderLabel(folder)}
-                    </Text>
-                    <Text style={styles.hint}>
-                        Tap Save backup to create a new backup in this folder.
-                    </Text>
-                    <Pressable
-                        accessibilityRole="button"
+                    ) : folderError ? (
+                        <>
+                            <Text style={utilityStyles.hint}>
+                                Unable to load your backup folder. Please try
+                                again.
+                            </Text>
+                            <UtilityButton
+                                title="Retry loading folder"
+                                secondary
+                                disabled={busy}
+                                onPress={() => {
+                                    setFolderReady(false);
+                                    void loadFolder();
+                                }}
+                            />
+                        </>
+                    ) : folder ? (
+                        <>
+                            <Text style={utilityStyles.noticeText}>
+                                Backup folder: {backupFolderLabel(folder)}
+                            </Text>
+                            <Text style={utilityStyles.hint}>
+                                Save backup creates a new file in this folder.
+                            </Text>
+                        </>
+                    ) : (
+                        <Text style={utilityStyles.hint}>
+                            For your first backup, choose or create a folder
+                            named “TodoApp Backups”, then tap “Use this folder”
+                            and allow access. If Android says “Can’t use this
+                            folder”, create a new folder and open it. TodoApp
+                            remembers your choice for later backups.
+                        </Text>
+                    )}
+                </View>
+                <UtilityButton
+                    title="Save backup"
+                    disabled={busy || !folderReady || folderError}
+                    onPress={() =>
+                        void run(saveCurrentBackup, 'Unable to save backup')
+                    }
+                />
+                {folderReady && !folderError && folder && (
+                    <UtilityButton
+                        title="Change backup folder"
+                        secondary
                         disabled={busy}
-                        accessibilityState={{ disabled: busy }}
-                        style={styles.cancelButton}
                         onPress={() =>
                             void run(async () => {
-                                if (await chooseBackupFolder())
+                                if (await chooseBackupFolder()) {
+                                    setMessageSection('save');
                                     setMessage(
                                         'Backup folder changed. Your existing backup files stay where they are.',
                                     );
-                            })
+                                }
+                            }, 'Unable to change backup folder')
                         }
-                    >
-                        <Text style={styles.secondaryText}>
-                            Change backup folder
-                        </Text>
-                    </Pressable>
-                </>
-            ) : (
-                <Text style={styles.hint}>
-                    For your first backup, choose or create a folder named
-                    “TodoApp Backups”, then tap “Use this folder” and allow
-                    access. If Android says “Can’t use this folder”, create a
-                    new folder and open it. TodoApp will remember your choice
-                    for later backups.
-                </Text>
-            )}
-            <Pressable
-                accessibilityRole="button"
-                disabled={busy || !folderReady || folderError}
-                accessibilityState={{
-                    disabled: busy || !folderReady || folderError,
-                }}
-                style={[
-                    styles.button,
-                    (busy || !folderReady || folderError) && styles.disabled,
-                ]}
-                onPress={() => void run(saveCurrentBackup)}
-            >
-                <Text style={styles.buttonText}>Save backup</Text>
-            </Pressable>
+                    />
+                )}
+                {message !== '' && messageSection === 'save' && (
+                    <UtilityNotice>{message}</UtilityNotice>
+                )}
+            </UtilityCard>
 
-            <View style={styles.section}>
-                <Text style={styles.heading} accessibilityRole="header">
-                    Restore from a backup
-                </Text>
-                <Text style={styles.description}>
-                    Choose a TodoApp backup file to preview it. Restore adds
-                    missing todos and keeps existing ones unchanged. Existing
-                    edits are preserved. Todos deleted since the backup will be
-                    added back.
-                </Text>
-                <Pressable
-                    accessibilityRole="button"
+            <UtilityCard
+                title="Restore from a backup"
+                icon="restore"
+                description="Adds missing todos and keeps your current todos and edits unchanged. Todos deleted since the backup will be added back."
+            >
+                <UtilityButton
+                    title="Choose backup file"
+                    secondary
                     disabled={busy}
-                    accessibilityState={{ disabled: busy }}
-                    style={[styles.secondaryButton, busy && styles.disabled]}
                     onPress={() =>
                         void run(async () => {
                             setSelection(null);
                             const chosen = await pickBackupFile();
                             if (chosen) setSelection(chosen);
-                        })
+                        }, 'Unable to open backup')
                     }
-                >
-                    <Text style={styles.secondaryText}>Choose backup file</Text>
-                </Pressable>
-            </View>
-            {selection && (
-                <View style={styles.preview}>
-                    <Text
-                        style={styles.previewTitle}
-                        accessibilityRole="header"
-                    >
-                        Backup preview
-                    </Text>
-                    <Text style={styles.description}>{selection.name}</Text>
-                    <Text style={styles.description}>
-                        Created{' '}
-                        {new Date(selection.backup.exportedAt).toLocaleString()}
-                    </Text>
-                    <Text style={styles.description}>
-                        {
-                            selection.backup.todos.filter(
-                                (todo) => todo.status === 'open',
-                            ).length
-                        }{' '}
-                        open ·{' '}
-                        {
-                            selection.backup.todos.filter(
-                                (todo) => todo.status === 'completed',
-                            ).length
-                        }{' '}
-                        completed
-                    </Text>
-                    <Pressable
-                        accessibilityRole="button"
-                        disabled={busy}
-                        accessibilityState={{ disabled: busy }}
-                        style={[styles.button, busy && styles.disabled]}
-                        onPress={confirmRestore}
-                    >
-                        <Text style={styles.buttonText}>
-                            Restore missing todos
+                />
+                {selection && (
+                    <View style={[utilityStyles.notice, { gap: 10 }]}>
+                        <Text
+                            style={utilityStyles.cardTitle}
+                            accessibilityRole="header"
+                        >
+                            Backup preview
                         </Text>
-                    </Pressable>
-                    <Pressable
-                        accessibilityRole="button"
-                        disabled={busy}
-                        style={styles.cancelButton}
-                        onPress={() => setSelection(null)}
-                    >
-                        <Text style={styles.secondaryText}>Cancel</Text>
-                    </Pressable>
-                </View>
-            )}
+                        <Text style={utilityStyles.body}>{selection.name}</Text>
+                        <Text style={utilityStyles.hint}>
+                            Created{' '}
+                            {new Date(
+                                selection.backup.exportedAt,
+                            ).toLocaleString()}
+                        </Text>
+                        <Text style={utilityStyles.noticeText}>
+                            {
+                                selection.backup.todos.filter(
+                                    (todo) => todo.status === 'open',
+                                ).length
+                            }{' '}
+                            open ·{' '}
+                            {
+                                selection.backup.todos.filter(
+                                    (todo) => todo.status === 'completed',
+                                ).length
+                            }{' '}
+                            completed
+                        </Text>
+                        <UtilityButton
+                            title="Restore missing todos"
+                            disabled={busy}
+                            onPress={confirmRestore}
+                        />
+                        <UtilityButton
+                            title="Cancel"
+                            secondary
+                            disabled={busy}
+                            onPress={() => setSelection(null)}
+                        />
+                    </View>
+                )}
+                {message !== '' && messageSection === 'restore' && (
+                    <UtilityNotice>{message}</UtilityNotice>
+                )}
+            </UtilityCard>
             {busy && (
-                <View style={styles.progress}>
-                    <ActivityIndicator />
-                    <Text style={styles.description}>Working…</Text>
+                <View style={{ alignItems: 'center', gap: 8 }}>
+                    <ActivityIndicator color={homeColors.accent} />
+                    <Text
+                        style={utilityStyles.body}
+                        accessibilityLiveRegion="polite"
+                    >
+                        Working…
+                    </Text>
                 </View>
             )}
-            {message !== '' && (
-                <Text style={styles.message} accessibilityLiveRegion="polite">
-                    {message}
-                </Text>
-            )}
-        </ScrollView>
+            <Text style={utilityStyles.hint}>
+                Keep another copy on your computer or in cloud storage in case
+                your phone is lost. Backup files are plain text and include your
+                notes.
+            </Text>
+        </UtilityScreen>
     );
 }
-
-const styles = StyleSheet.create({
-    screen: { flex: 1, backgroundColor: '#ffffff' },
-    content: { padding: 20 },
-    heading: { fontSize: 20, fontWeight: '600', color: '#222222' },
-    description: {
-        fontSize: 15,
-        color: '#555555',
-        lineHeight: 23,
-        marginTop: 10,
-    },
-    hint: { fontSize: 13, color: '#666666', lineHeight: 20, marginTop: 10 },
-    button: {
-        backgroundColor: '#222222',
-        borderRadius: 8,
-        minHeight: 48,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 12,
-        marginTop: 16,
-    },
-    buttonText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
-    secondaryButton: {
-        borderColor: '#555555',
-        borderWidth: 1,
-        borderRadius: 8,
-        minHeight: 48,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 12,
-        marginTop: 16,
-    },
-    secondaryText: { color: '#222222', fontSize: 16, fontWeight: '600' },
-    section: { marginTop: 32 },
-    preview: {
-        marginTop: 24,
-        padding: 16,
-        backgroundColor: '#f4f4f4',
-        borderRadius: 10,
-    },
-    previewTitle: { fontSize: 17, fontWeight: '600', color: '#222222' },
-    cancelButton: {
-        minHeight: 48,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginTop: 4,
-    },
-    disabled: { opacity: 0.5 },
-    progress: { marginTop: 20, alignItems: 'center' },
-    message: { marginTop: 20, color: '#222222', fontSize: 15, lineHeight: 23 },
-});

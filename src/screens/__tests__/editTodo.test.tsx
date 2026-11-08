@@ -16,6 +16,7 @@ import {
     deleteTodo,
     getTodoById,
     getSeriesEditingTodoId,
+    reopenTodo,
     updateTodo,
 } from '@/repositories/todo.repository';
 import type { Todo } from '@/types/todo';
@@ -260,5 +261,25 @@ test('a future preview can be completed using its occurrence identity', async ()
         screen.getByRole('button', { name: 'Complete Todo' }),
     );
     expect(completeTodo).toHaveBeenCalledWith('one');
+    expect(router.back).toHaveBeenCalledTimes(1);
+});
+
+test('a completed todo can be reopened from its existing review screen', async () => {
+    jest.mocked(getTodoById).mockResolvedValue({
+        ...saved,
+        status: 'completed',
+        completedAt: '2030-06-16T12:00:00Z',
+    });
+    jest.mocked(reopenTodo).mockResolvedValue(undefined);
+    await render(<EditTodoScreen />);
+    await waitFor(() =>
+        expect(
+            screen.getByRole('button', { name: 'Reopen Todo' }),
+        ).toBeTruthy(),
+    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Reopen Todo' }));
+    expect(reopenTodo).toHaveBeenCalledWith('one');
+    expect(completeTodo).not.toHaveBeenCalled();
+    expect(updateTodo).not.toHaveBeenCalled();
     expect(router.back).toHaveBeenCalledTimes(1);
 });

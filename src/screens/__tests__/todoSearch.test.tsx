@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, jest, test } from '@jest/globals';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { BackHandler } from 'react-native';
 import HomeScreen from '@/app/index';
 import { useTodos } from '@/hooks/useTodos';
@@ -450,4 +450,74 @@ test('creating a future todo opens a bounded Custom range to reveal it', async (
         'Future appointment',
     );
     expect(screen.getByText('Future appointment')).toBeTruthy();
+});
+
+test('completed history groups by completion day and opens a todo for review without completing it again', async () => {
+    const latest = new Date(2030, 5, 14, 12);
+    const previous = new Date(2030, 5, 13, 12);
+    todos = [
+        makeTodo({
+            id: 'latest',
+            subject: 'Finished latest',
+            status: 'completed',
+            dueDate: '2090-01-01',
+            completedAt: latest.toISOString(),
+        }),
+        makeTodo({
+            id: 'previous',
+            subject: 'Finished earlier',
+            status: 'completed',
+            dueDate: '2090-01-01',
+            completedAt: previous.toISOString(),
+        }),
+    ];
+    await render(<HomeScreen />);
+    await viewCompleted();
+    const heading = (date: Date) =>
+        date.toLocaleDateString(undefined, {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+        });
+    expect(screen.getByRole('header', { name: heading(latest) })).toBeTruthy();
+    expect(
+        screen.getByRole('header', { name: heading(previous) }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('header', { name: /2090/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create todo' })).toBeNull();
+    await fireEvent.press(
+        screen.getByRole('button', {
+            name: 'Review completed todo: Finished latest',
+        }),
+    );
+    expect(router.navigate).toHaveBeenCalledWith({
+        pathname: '/todo/[id]',
+        params: { id: 'latest' },
+    });
+    expect(complete).not.toHaveBeenCalled();
+});
+
+test('menu tools close the menu and navigate to the existing backup and reminder screens', async () => {
+    await render(<HomeScreen />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Todo options' }));
+    expect(screen.getByRole('header', { name: 'Your todos' })).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Tools' })).toBeTruthy();
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Backup & restore' }),
+    );
+    expect(router.push).toHaveBeenLastCalledWith('/backup');
+    expect(
+        screen.queryByRole('button', { name: 'Backup & restore' }),
+    ).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: 'Todo options' }));
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Restore reminder notifications' }),
+    );
+    expect(router.push).toHaveBeenLastCalledWith('/restore-reminders');
+    expect(
+        screen.queryByRole('button', {
+            name: 'Restore reminder notifications',
+        }),
+    ).toBeNull();
 });

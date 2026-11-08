@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, jest, test } from '@jest/globals';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { Alert } from 'react-native';
+import { usePreventRemove } from 'expo-router/react-navigation';
 import BackupScreen from '@/app/backup';
 import { createBackup, restoreBackup } from '@/repositories/backup.repository';
 import {
@@ -84,7 +85,10 @@ test('failed restore retains preview for retry', async () => {
         alert.mock.calls.at(-1)![2]![1].onPress?.();
     });
     expect(screen.getByText('Backup preview')).toBeTruthy();
-    expect(alert).toHaveBeenLastCalledWith('Unable to finish', 'Storage full');
+    expect(alert).toHaveBeenLastCalledWith(
+        'Unable to restore backup',
+        'Storage full',
+    );
 });
 test('cancel selection and invalid files never start restoring', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
@@ -95,7 +99,10 @@ test('cancel selection and invalid files never start restoring', async () => {
     await fireEvent.press(screen.getByText('Choose backup file'));
     expect(screen.queryByText('Backup preview')).toBeNull();
     await fireEvent.press(screen.getByText('Choose backup file'));
-    expect(alert).toHaveBeenCalledWith('Unable to finish', 'Invalid backup');
+    expect(alert).toHaveBeenCalledWith(
+        'Unable to open backup',
+        'Invalid backup',
+    );
     expect(restoreBackup).not.toHaveBeenCalled();
 });
 test('canceled save reports no success, successful save does', async () => {
@@ -187,4 +194,41 @@ test('failed settings load can be retried before saving', async () => {
     ).toBe(true);
     await fireEvent.press(screen.getByText('Retry loading folder'));
     expect(screen.getByText('Backup folder: TodoApp Backups')).toBeTruthy();
+});
+
+test('saving disables competing actions and protects Back until the file operation finishes', async () => {
+    let finish!: (name: string) => void;
+    jest.mocked(getBackupFolder).mockResolvedValue('content://folder');
+    jest.mocked(saveBackupFile).mockImplementationOnce(
+        () =>
+            new Promise((resolve) => {
+                finish = resolve;
+            }),
+    );
+    await render(<BackupScreen />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Save backup' }));
+    for (const name of [
+        'Save backup',
+        'Change backup folder',
+        'Choose backup file',
+    ]) {
+        expect(
+            screen.getByRole('button', { name }).props.accessibilityState
+                .disabled,
+        ).toBe(true);
+    }
+    expect(usePreventRemove).toHaveBeenLastCalledWith(
+        true,
+        expect.any(Function),
+    );
+    await fireEvent.press(
+        screen.getByRole('button', { name: 'Choose backup file' }),
+    );
+    expect(pickBackupFile).not.toHaveBeenCalled();
+    await act(() => finish('finished.json'));
+    expect(screen.getByText('Backup saved: finished.json')).toBeTruthy();
+    expect(
+        screen.getByRole('button', { name: 'Save backup' }).props
+            .accessibilityState.disabled,
+    ).toBe(false);
 });
