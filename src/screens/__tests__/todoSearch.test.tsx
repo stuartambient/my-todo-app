@@ -548,3 +548,41 @@ test('Next 30 days selects its range while only Custom opens the date editor', a
         screen.getByRole('radio', { name: 'Next 30 days', checked: true }),
     ).toBeTruthy();
 });
+
+test('Custom highlights immediately while editing and Cancel restores the applied preset', async () => {
+    await render(<HomeScreen />);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Next 7 days' }));
+    const appliedRange = jest.mocked(useTodos).mock.lastCall;
+    await fireEvent.press(screen.getByRole('radio', { name: 'Custom…' }));
+    expect(
+        screen.getByRole('radio', {
+            name: 'Custom…',
+            checked: true,
+            expanded: true,
+        }),
+    ).toBeTruthy();
+    expect(
+        screen.getByRole('radio', { name: 'Next 7 days', checked: false }),
+    ).toBeTruthy();
+    expect(useTodos).toHaveBeenLastCalledWith(...appliedRange!);
+    await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+    expect(
+        screen.getByRole('radio', {
+            name: 'Custom…',
+            checked: false,
+            expanded: false,
+        }),
+    ).toBeTruthy();
+    expect(
+        screen.getByRole('radio', { name: 'Next 7 days', checked: true }),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Custom…' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Apply range' }));
+    expect(
+        screen.getByRole('radio', {
+            name: 'Custom…',
+            checked: true,
+            expanded: false,
+        }),
+    ).toBeTruthy();
+});

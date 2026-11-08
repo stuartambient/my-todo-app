@@ -496,8 +496,10 @@ export default function HomeScreen() {
                     {dateRanges.map((range) => {
                         const isCustom = range.daysAhead === null;
                         const selected = isCustom
-                            ? Boolean(customRange)
-                            : !customRange && daysAhead === range.daysAhead;
+                            ? editingRange || Boolean(customRange)
+                            : !editingRange &&
+                              !customRange &&
+                              daysAhead === range.daysAhead;
                         return (
                             <Pressable
                                 key={range.label}
